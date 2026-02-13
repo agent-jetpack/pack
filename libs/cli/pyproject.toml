@@ -231,6 +231,14 @@ ignore-var-parameters = true
     "S",        # Security warnings — not applicable to tests
     "SLF",      # Private member access — tests need access to internals
 ]
+"tests/unit_tests/test_imports.py" = ["PLC0415"]  # Imports inside function ARE the test
+"deepagents_cli/loop_detection.py" = [
+    "DOC201",  # Returns section not needed for simple one-line docstrings
+]
+"deepagents_cli/agent.py" = [
+    "PLR2004",  # Magic value used in comparison
+    "SIM108",   # Use ternary operator instead of if-else
+]
 "scripts/**" = [
     "BLE001",   # Blind exception catch — resilience in standalone scripts
     "INP",      # Missing `__init__.py` — scripts are standalone
