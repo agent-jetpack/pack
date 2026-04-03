@@ -341,12 +341,16 @@ def create_deep_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph assembly
         deepagent_middleware.extend(middleware)
 
     # --- Pack harness middleware ---
-    # Order: hooks → cost → permissions → compaction
+    # Order: hooks → cost → permissions → compaction → memory
     # Hooks wrap everything, cost tracks usage, permissions gate tools,
-    # compaction manages context before model calls.
+    # compaction manages context before model calls, memory injects/extracts.
     # auto_approve=True when interrupt_on is empty (CLI's -y flag).
     _pack_auto_approve = interrupt_on is not None and len(interrupt_on) == 0
-    _add_pack_middleware(deepagent_middleware, auto_approve=_pack_auto_approve)
+    pack_extra_tools = _add_pack_middleware(deepagent_middleware, auto_approve=_pack_auto_approve)
+
+    # Merge Pack extended tools into the tools list
+    if pack_extra_tools:
+        tools = list(tools or []) + pack_extra_tools
 
     # Caching + memory after all other middleware so memory updates don't
     # invalidate the Anthropic prompt cache prefix.
@@ -356,8 +360,28 @@ def create_deep_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph assembly
     if interrupt_on is not None:
         deepagent_middleware.append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on))
 
-    # Combine system_prompt with BASE_AGENT_PROMPT
-    if system_prompt is None:
+    # Combine system_prompt with BASE_AGENT_PROMPT.
+    # When Pack is enabled, use SystemPromptBuilder for modular sections
+    # with provider-aware cache boundaries. Falls back to BASE_AGENT_PROMPT
+    # when Pack is not active.
+    if os.environ.get("PACK_ENABLED"):
+        from deepagents.prompt.builder import SystemPromptBuilder
+
+        builder = SystemPromptBuilder()
+        # Add user-supplied system prompt as a static section if provided
+        if system_prompt is not None:
+            user_text = (
+                system_prompt.content
+                if isinstance(system_prompt, SystemMessage)
+                else system_prompt
+            )
+            if isinstance(user_text, str):
+                builder.add_static_section(user_text)
+        # Dynamic sections are injected at runtime by LocalContextMiddleware
+        # in the CLI. Add placeholder environment info so the builder includes
+        # the section structure even when called outside the CLI.
+        final_system_prompt = builder.build_text()
+    elif system_prompt is None:
         final_system_prompt: str | SystemMessage = BASE_AGENT_PROMPT
     elif isinstance(system_prompt, SystemMessage):
         final_system_prompt = SystemMessage(content_blocks=[*system_prompt.content_blocks, {"type": "text", "text": f"\n\n{BASE_AGENT_PROMPT}"}])
@@ -393,7 +417,7 @@ def _add_pack_middleware(
     stack: list[AgentMiddleware[Any, Any, Any]],
     *,
     auto_approve: bool = False,
-) -> None:
+) -> list[BaseTool]:
     """Add Pack harness middleware to the agent middleware stack.
 
     Only activates when PACK_ENABLED=1 is set (the CLI sets this
@@ -403,9 +427,13 @@ def _add_pack_middleware(
     Args:
         stack: Middleware list to extend in-place.
         auto_approve: If True, permission pipeline passes everything through.
+
+    Returns:
+        List of extra tools to register (git worktrees, document reader).
+        Empty list when Pack is not enabled.
     """
     if not os.environ.get("PACK_ENABLED"):
-        return
+        return []
 
     try:
         default_data = str(Path.home() / ".pack")
@@ -442,7 +470,23 @@ def _add_pack_middleware(
     collapser = ContextCollapser(collapse_dir)
     stack.append(CompactionMiddleware(monitor, collapser))
 
-    # Hooks — load from ~/.pack/hooks.json if present
+    # Structured memory
+    from deepagents.memory.index import MemoryIndex
+    from deepagents.middleware.pack.memory_middleware import PackMemoryMiddleware
+
+    memory_dir = data_dir / "memories"
+    memory_index = MemoryIndex(str(memory_dir))
+    memory_index.ensure_dirs()
+    stack.append(PackMemoryMiddleware(memory_index))
+
+    # Parallel tool executor -- stored in PackState for callers that can
+    # batch tool calls.  Full integration requires changes to the LangGraph
+    # tool execution node; the middleware pattern only wraps individual calls.
+    from deepagents.execution.parallel import ParallelToolExecutor
+
+    parallel_executor = ParallelToolExecutor()
+
+    # Hooks -- load from ~/.pack/hooks.json if present
     hook_engine = None
     hooks_file = data_dir / "hooks.json"
     if hooks_file.exists():
@@ -466,7 +510,7 @@ def _add_pack_middleware(
                 for h in raw
             ]
             hook_engine = HookEngine(hooks=hooks)
-            stack.insert(0, HooksMiddleware(hook_engine))  # First position — wraps everything
+            stack.insert(0, HooksMiddleware(hook_engine))  # First position -- wraps everything
             logger.debug("Loaded %d hooks from %s", len(hooks), hooks_file)
         except Exception:  # noqa: BLE001
             logger.warning("Failed to load hooks from %s", hooks_file, exc_info=True)
@@ -480,7 +524,25 @@ def _add_pack_middleware(
         collapser=collapser,
         compaction_monitor=monitor,
         hook_engine=hook_engine,
+        memory_index=memory_index,
+        parallel_executor=parallel_executor,
         data_dir=str(data_dir),
     ))
 
-    logger.debug("Pack harness middleware added: cost, permissions, compaction, hooks")
+    logger.debug("Pack harness middleware added: cost, permissions, compaction, memory, hooks")
+
+    # Extended tools: git worktrees + document reader
+    from deepagents.tools.document_reader import read_image, read_pdf
+    from deepagents.tools.git_worktree import (
+        git_worktree_create,
+        git_worktree_list,
+        git_worktree_remove,
+    )
+
+    return [
+        git_worktree_create,
+        git_worktree_list,
+        git_worktree_remove,
+        read_pdf,
+        read_image,
+    ]

@@ -17,7 +17,9 @@ if TYPE_CHECKING:
     from deepagents.compaction.context_collapse import ContextCollapser
     from deepagents.compaction.monitor import CompactionMonitor
     from deepagents.cost.tracker import CostTracker
+    from deepagents.execution.parallel import ParallelToolExecutor
     from deepagents.hooks.engine import HookEngine
+    from deepagents.memory.index import MemoryIndex
     from deepagents.permissions.pipeline import PermissionPipeline
 
 
@@ -31,6 +33,8 @@ class PackState:
         collapser: The context collapser for verbose tool results.
         compaction_monitor: The context window monitor.
         hook_engine: The hook event engine.
+        memory_index: The structured memory index.
+        parallel_executor: The parallel tool executor.
         data_dir: Base directory for Pack data (rules, memories, etc.).
     """
 
@@ -39,6 +43,8 @@ class PackState:
     collapser: ContextCollapser | None = None
     compaction_monitor: CompactionMonitor | None = None
     hook_engine: HookEngine | None = None
+    memory_index: MemoryIndex | None = None
+    parallel_executor: ParallelToolExecutor | None = None
     data_dir: str = ""
 
 
