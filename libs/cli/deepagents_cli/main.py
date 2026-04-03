@@ -1147,6 +1147,9 @@ def _check_mcp_project_trust(*, trust_flag: bool = False) -> bool | None:
 
 def cli_main() -> None:
     """Entry point for console script."""
+    # Enable Pack harness middleware (compaction, permissions, cost tracking)
+    os.environ.setdefault("PACK_ENABLED", "1")
+
     # Fix for gRPC fork issue on macOS
     # https://github.com/grpc/grpc/issues/37642
     if sys.platform == "darwin":

@@ -1,6 +1,16 @@
-"""Deep Agents come with planning, filesystem, and subagents."""
+"""Deep Agents come with planning, filesystem, and subagents.
 
+Pack enhancement: includes harness engineering middleware for compaction,
+permissions, cost tracking, and hooks.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import tempfile
 from collections.abc import Callable, Sequence
+from pathlib import Path
 from typing import Any, cast
 
 from langchain.agents import AgentState, create_agent
@@ -34,6 +44,8 @@ from deepagents.middleware.subagents import (
     SubAgentMiddleware,
 )
 from deepagents.middleware.summarization import create_summarization_middleware
+
+logger = logging.getLogger(__name__)
 
 BASE_AGENT_PROMPT = """You are a Deep Agent, an AI assistant that helps users accomplish tasks using tools. You respond with text and tool calls. The user can see your responses and tool outputs in real time.
 
@@ -70,12 +82,26 @@ Keep working until the task is fully complete. Don't stop partway and explain wh
 For longer tasks, provide brief progress updates at reasonable intervals — a concise sentence recapping what you've done and what's next."""  # noqa: E501
 
 
-def get_default_model() -> ChatAnthropic:
+def get_default_model() -> BaseChatModel:
     """Get the default model for deep agents.
 
+    Pack enhancement: tries OpenRouter first (if OPENROUTER_API_KEY is set),
+    then falls back to Anthropic.
+
     Returns:
-        `ChatAnthropic` instance configured with Claude Sonnet 4.6.
+        Chat model instance — OpenRouter-backed or Anthropic.
     """
+    openrouter_key = os.environ.get("OPENROUTER_API_KEY")
+    if openrouter_key:
+        try:
+            from deepagents.providers.openrouter import OpenRouterProvider
+
+            provider = OpenRouterProvider(api_key=openrouter_key)
+            default_model = os.environ.get("PACK_DEFAULT_MODEL", "anthropic/claude-sonnet-4-6")
+            return provider.create_model(default_model)
+        except Exception:  # noqa: BLE001  # Fallback to Anthropic if OpenRouter fails
+            logger.debug("OpenRouter initialization failed, falling back to Anthropic", exc_info=True)
+
     return ChatAnthropic(
         model_name="claude-sonnet-4-6",
     )
@@ -313,6 +339,13 @@ def create_deep_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph assembly
 
     if middleware:
         deepagent_middleware.extend(middleware)
+
+    # --- Pack harness middleware ---
+    # Order: hooks → permissions → cost → compaction
+    # (hooks wrap everything, permissions gate tools, cost tracks usage,
+    #  compaction manages context before model calls)
+    _add_pack_middleware(deepagent_middleware)
+
     # Caching + memory after all other middleware so memory updates don't
     # invalidate the Anthropic prompt cache prefix.
     deepagent_middleware.append(AnthropicPromptCachingMiddleware(unsupported_model_behavior="ignore"))
@@ -352,3 +385,50 @@ def create_deep_agent(  # noqa: C901, PLR0912, PLR0915  # Complex graph assembly
             },
         }
     )
+
+
+def _add_pack_middleware(stack: list[AgentMiddleware[Any, Any, Any]]) -> None:
+    """Add Pack harness middleware to the agent middleware stack.
+
+    Only activates when PACK_ENABLED=1 is set (the CLI sets this
+    automatically). This prevents Pack middleware from affecting
+    upstream tests or SDK consumers who don't want it.
+
+    Args:
+        stack: Middleware list to extend in-place.
+    """
+    if not os.environ.get("PACK_ENABLED"):
+        return
+
+    # Cost tracking — always enabled, zero cost if pricing unknown
+    from deepagents.cost.tracker import CostTracker
+    from deepagents.middleware.pack.cost_middleware import CostMiddleware
+
+    cost_tracker = CostTracker()
+    stack.append(CostMiddleware(cost_tracker))
+
+    # Permission pipeline — deterministic rules, no LLM needed
+    from deepagents.middleware.pack.permission_middleware import PermissionMiddleware
+    from deepagents.permissions.classifier import PermissionClassifier
+    from deepagents.permissions.pipeline import PermissionPipeline
+    from deepagents.permissions.rules import RuleStore
+
+    rules_dir = Path(os.environ.get("PACK_DATA_DIR", str(Path.home() / ".pack")))
+    rules_dir = Path(rules_dir)
+    rules_dir.mkdir(parents=True, exist_ok=True)
+    rule_store = RuleStore(rules_dir / "permission_rules.json")
+    pipeline = PermissionPipeline(rule_store, PermissionClassifier())
+    stack.append(PermissionMiddleware(pipeline))
+
+    # Context compaction — proactive monitoring
+    from deepagents.compaction.context_collapse import ContextCollapser
+    from deepagents.compaction.monitor import CompactionMonitor
+    from deepagents.middleware.pack.compaction_middleware import CompactionMiddleware
+
+    collapse_dir = rules_dir / "collapsed"
+    collapse_dir.mkdir(parents=True, exist_ok=True)
+    monitor = CompactionMonitor(context_window=200_000)
+    collapser = ContextCollapser(collapse_dir)
+    stack.append(CompactionMiddleware(monitor, collapser))
+
+    logger.debug("Pack harness middleware added: cost, permissions, compaction")
