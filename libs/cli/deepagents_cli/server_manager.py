@@ -69,11 +69,17 @@ def _apply_server_config(config: ServerConfig) -> None:
 def _capture_project_context() -> ProjectContext | None:
     """Capture the user's project context for the server subprocess.
 
+    Prefers ``DEEPAGENTS_USER_CWD`` env var (set by callers that change the
+    process working directory, e.g. ``uv run --directory``), falling back to
+    the actual process cwd.
+
     Returns:
         Explicit project context, or `None` when cwd cannot be determined.
     """
     try:
-        return ProjectContext.from_user_cwd(Path.cwd())
+        user_cwd_env = os.environ.get("DEEPAGENTS_USER_CWD")
+        cwd = Path(user_cwd_env) if user_cwd_env else Path.cwd()
+        return ProjectContext.from_user_cwd(cwd)
     except OSError:
         logger.warning("Could not determine working directory for server")
         return None

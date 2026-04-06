@@ -737,6 +737,10 @@ def parse_shell_allow_list(allow_list_str: str | None) -> list[str] | None:
     if allow_list_str.strip().lower() == "recommended":
         return list(RECOMMENDED_SAFE_SHELL_COMMANDS)
 
+    # Special value 'benchmark' uses extended list for eval runs
+    if allow_list_str.strip().lower() == "benchmark":
+        return list(BENCHMARK_SHELL_COMMANDS)
+
     # Split by comma and strip whitespace
     commands = [cmd.strip() for cmd in allow_list_str.split(",") if cmd.strip()]
 
@@ -748,11 +752,13 @@ def parse_shell_allow_list(allow_list_str: str | None) -> list[str] | None:
         )
         raise ValueError(msg)
 
-    # If "recommended" is in the list, merge with recommended commands
+    # If "recommended" or "benchmark" is in the list, merge with that tier
     result = []
     for cmd in commands:
         if cmd.lower() == "recommended":
             result.extend(RECOMMENDED_SAFE_SHELL_COMMANDS)
+        elif cmd.lower() == "benchmark":
+            result.extend(BENCHMARK_SHELL_COMMANDS)
         else:
             result.append(cmd)
 
@@ -1505,6 +1511,72 @@ Only includes readers and formatters — shells, editors, interpreters, package
 managers, network tools, archivers, and anything on GTFOBins/LOOBins is
 intentionally excluded. File-write and injection vectors are blocked separately
 by `DANGEROUS_SHELL_PATTERNS`.
+"""
+
+BENCHMARK_SHELL_COMMANDS = RECOMMENDED_SAFE_SHELL_COMMANDS + (
+    # Interpreters and runtimes
+    "python3",
+    "python",
+    "node",
+    # Package managers
+    "pip",
+    "pip3",
+    "uv",
+    "npm",
+    # Build tools and compilers
+    "gcc",
+    "g++",
+    "make",
+    "cmake",
+    "rustc",
+    "cargo",
+    "coqc",
+    # Crypto and certificates
+    "openssl",
+    # Version control
+    "git",
+    # Network (download only)
+    "curl",
+    "wget",
+    # Archive tools
+    "tar",
+    "unzip",
+    "gzip",
+    "gunzip",
+    # File manipulation
+    "chmod",
+    "mkdir",
+    "cp",
+    "mv",
+    "rm",
+    "touch",
+    "tee",
+    "ln",
+    # Text processing (write-capable)
+    "sort",
+    "uniq",
+    "awk",
+    "sed",
+    "xargs",
+    # Shell builtins and utilities
+    "echo",
+    "printf",
+    "test",
+    "true",
+    "false",
+    "env",
+    "date",
+    "sleep",
+    "timeout",
+    "find",
+)
+"""Extended command set for benchmark and evaluation runs.
+
+Superset of `RECOMMENDED_SAFE_SHELL_COMMANDS` that adds interpreters,
+compilers, package managers, and file manipulation commands needed for
+agentic task completion. Use via ``-S benchmark``. Dangerous patterns
+(redirects, substitution, etc.) are still blocked by
+`DANGEROUS_SHELL_PATTERNS`.
 """
 
 

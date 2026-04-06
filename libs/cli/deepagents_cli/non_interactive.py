@@ -19,7 +19,9 @@ stderr, leaving stdout exclusively for the agent's response text.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import os
 import sys
 import threading
 import time
@@ -30,6 +32,8 @@ from langchain.agents.middleware.human_in_the_loop import ActionRequest, HITLReq
 from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import Command, Interrupt
 from pydantic import TypeAdapter, ValidationError
+from pathlib import Path
+
 from rich.console import Console
 from rich.live import Live
 from rich.markup import escape as escape_markup
@@ -566,6 +570,75 @@ def _process_hitl_interrupts(state: StreamState, console: Console) -> None:
         state.hitl_response[interrupt_id] = {"decisions": decisions}
 
 
+# ---------------------------------------------------------------------------
+# Verification runner
+# ---------------------------------------------------------------------------
+
+_VERIFY_OUTPUT_LIMIT = 2000
+
+
+@dataclass
+class VerifyResult:
+    """Result of running a verification command."""
+
+    passed: bool
+    exit_code: int
+    output: str
+
+
+async def _run_verification(
+    cmd: str,
+    cwd: Path,
+    timeout: int = 60,
+) -> VerifyResult:
+    """Run a verification command and return structured results.
+
+    Args:
+        cmd: Shell command to execute.
+        cwd: Working directory for the command.
+        timeout: Maximum seconds to wait before killing the process.
+
+    Returns:
+        `VerifyResult` with pass/fail, exit code, and truncated output.
+    """
+    try:
+        proc = await asyncio.create_subprocess_shell(
+            cmd,
+            cwd=cwd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        try:
+            stdout, _ = await asyncio.wait_for(
+                proc.communicate(), timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            return VerifyResult(
+                passed=False,
+                exit_code=-1,
+                output="Verification timed out after "
+                f"{timeout}s",
+            )
+
+        output = stdout.decode(errors="replace") if stdout else ""
+        if len(output) > _VERIFY_OUTPUT_LIMIT:
+            output = output[:_VERIFY_OUTPUT_LIMIT] + "\n[truncated]"
+
+        return VerifyResult(
+            passed=proc.returncode == 0,
+            exit_code=proc.returncode or 0,
+            output=output,
+        )
+    except OSError as e:
+        return VerifyResult(
+            passed=False,
+            exit_code=-1,
+            output=f"Failed to run verification command: {e}",
+        )
+
+
 async def _stream_agent(
     agent: Any,  # noqa: ANN401
     stream_input: dict[str, Any] | Command,
@@ -585,16 +658,37 @@ async def _stream_agent(
         console: Rich console for formatted output.
         file_op_tracker: Tracker for file-operation diffs.
     """
+    # Per-chunk inactivity timeout for non-interactive mode.
+    # If the agent produces no output for this duration, the stream is aborted.
+    inactivity_timeout = int(os.environ.get("PACK_NI_TIMEOUT", "120"))
+
     if state.spinner:
         state.spinner.start()
     try:
-        async for chunk in agent.astream(
+        aiter = agent.astream(
             stream_input,
             stream_mode=["messages", "updates"],
             subgraphs=True,
             config=config,
             durability="exit",
-        ):
+        ).__aiter__()
+        while True:
+            try:
+                chunk = await asyncio.wait_for(
+                    aiter.__anext__(), timeout=inactivity_timeout
+                )
+            except StopAsyncIteration:
+                break
+            except asyncio.TimeoutError:
+                logger.warning(
+                    "Agent stalled — no output for %ds. Aborting.",
+                    inactivity_timeout,
+                )
+                console.print(
+                    f"\n[red]Agent stalled — no output for "
+                    f"{inactivity_timeout}s. Task incomplete.[/red]"
+                )
+                break
             _process_stream_chunk(chunk, state, console, file_op_tracker)
     finally:
         if state.spinner:
@@ -611,11 +705,18 @@ async def _run_agent_loop(
     quiet: bool = False,
     stream: bool = True,
     thread_url_lookup: ThreadUrlLookupState | None = None,
-) -> None:
+    verify_cmd: str | None = None,
+    verify_retries: int = 3,
+) -> bool:
     """Run the agent and handle HITL interrupts until the task completes.
 
     The loop processes at most `_MAX_HITL_ITERATIONS` rounds to prevent
     runaway retries (e.g. the agent repeatedly attempting rejected commands).
+
+    When `verify_cmd` is provided, the command is run after the agent
+    completes. If it fails (non-zero exit), the error output is fed back
+    to the agent as a follow-up message and the cycle repeats up to
+    `verify_retries` times.
 
     Args:
         agent: The agent (Pregel or RemoteAgent).
@@ -630,6 +731,14 @@ async def _run_agent_loop(
             the end.
         thread_url_lookup: Optional non-blocking lookup state for rendering
             a fast-follow LangSmith thread link.
+        verify_cmd: Optional shell command to run after the agent completes.
+            If it exits non-zero, the agent is re-invoked with error output.
+        verify_retries: Maximum number of verification retry rounds.
+
+    Returns:
+        `True` if the task completed successfully (no verify_cmd, or
+        verification passed). `False` if verification failed after all
+        retries.
 
     Raises:
         HITLIterationLimitError: If the HITL iteration limit is exceeded.
@@ -642,6 +751,22 @@ async def _run_agent_loop(
 
     thread_id = config.get("configurable", {}).get("thread_id", "")
     await dispatch_hook("session.start", {"thread_id": thread_id})
+
+    # File-anchored task state: write task to disk so the agent can re-read
+    # it if it loses track during long-running tasks with many tool calls.
+    task_file: Path | None = None
+    if verify_cmd is not None:
+        verify_cwd_env = os.environ.get("DEEPAGENTS_USER_CWD")
+        task_cwd = Path(verify_cwd_env) if verify_cwd_env else Path.cwd()
+        task_file = task_cwd / ".pack_task.md"
+        try:
+            task_file.write_text(
+                f"# Task\n\n{message}\n\n"
+                f"# Verification\n\nAfter completion, this command will be run:\n"
+                f"```\n{verify_cmd}\n```\n"
+            )
+        except OSError:
+            task_file = None
 
     start_time = time.monotonic()
 
@@ -665,6 +790,67 @@ async def _run_agent_loop(
         await _stream_agent(
             agent, stream_input, config, state, console, file_op_tracker
         )
+
+    # ── Verify-retry loop ──────────────────────────────────────────
+    verification_passed = True
+    if verify_cmd is not None:
+        verify_cwd_env = os.environ.get("DEEPAGENTS_USER_CWD")
+        verify_cwd = Path(verify_cwd_env) if verify_cwd_env else Path.cwd()
+        max_attempts = verify_retries + 1  # first attempt + retries
+
+        for attempt in range(1, max_attempts + 1):
+            if not quiet:
+                console.print(
+                    f"\n[dim]Running verification (attempt {attempt}/{max_attempts})...[/dim]"
+                )
+            result = await _run_verification(verify_cmd, verify_cwd)
+
+            if result.passed:
+                if not quiet:
+                    console.print(
+                        f"[green]✓ Verification PASSED"
+                        f" (attempt {attempt}/{max_attempts})[/green]"
+                    )
+                break
+
+            # Verification failed
+            if not quiet:
+                excerpt = result.output[:500] if result.output else "(no output)"
+                console.print(
+                    f"[red]✗ Verification FAILED (exit {result.exit_code},"
+                    f" attempt {attempt}/{max_attempts})[/red]"
+                )
+                console.print(f"[dim]{escape_markup(excerpt)}[/dim]")
+
+            if attempt >= max_attempts:
+                verification_passed = False
+                if not quiet:
+                    console.print(
+                        f"[red]Verification failed after {max_attempts} attempts.[/red]"
+                    )
+                break
+
+            # Re-invoke the agent with the error feedback
+            feedback = (
+                f"Verification failed (exit code {result.exit_code}):\n\n"
+                f"{result.output}\n\n"
+                "Fix the issues and try again. Do not ask questions — just fix it."
+            )
+            stream_input = {"messages": [{"role": "user", "content": feedback}]}
+            state.full_response.clear()
+            await _stream_agent(
+                agent, stream_input, config, state, console, file_op_tracker
+            )
+
+            # Handle any HITL interrupts from the retry
+            while state.interrupt_occurred:
+                state.interrupt_occurred = False
+                state.hitl_response.clear()
+                _process_hitl_interrupts(state, console)
+                stream_input = Command(resume=state.hitl_response)
+                await _stream_agent(
+                    agent, stream_input, config, state, console, file_op_tracker
+                )
 
     wall_time = time.monotonic() - start_time
 
@@ -691,6 +877,15 @@ async def _run_agent_loop(
 
     await dispatch_hook("task.complete", {"thread_id": thread_id})
     await dispatch_hook("session.end", {"thread_id": thread_id})
+
+    # Clean up file-anchored task state
+    if task_file is not None:
+        try:
+            task_file.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+    return verification_passed
 
 
 def _build_non_interactive_header(
@@ -754,6 +949,8 @@ async def run_non_interactive(
     mcp_config_path: str | None = None,
     no_mcp: bool = False,
     trust_project_mcp: bool = False,
+    verify_cmd: str | None = None,
+    verify_retries: int = 3,
 ) -> int:
     """Run a single task non-interactively and exit.
 
@@ -911,7 +1108,7 @@ async def run_non_interactive(
 
             file_op_tracker = FileOpTracker(assistant_id=assistant_id, backend=None)
 
-            await _run_agent_loop(
+            verified = await _run_agent_loop(
                 agent,
                 message,
                 config,
@@ -920,6 +1117,8 @@ async def run_non_interactive(
                 quiet=quiet,
                 stream=stream,
                 thread_url_lookup=thread_url_lookup,
+                verify_cmd=verify_cmd,
+                verify_retries=verify_retries,
             )
 
     except KeyboardInterrupt:
@@ -945,4 +1144,4 @@ async def run_non_interactive(
         )
         return 1
     else:
-        return 0
+        return 0 if verified else 1

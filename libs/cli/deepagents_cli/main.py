@@ -514,6 +514,24 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--verify-cmd",
+        dest="verify_cmd",
+        metavar="CMD",
+        help="Shell command to run after non-interactive task completion. "
+        "If it exits non-zero, the error is fed back to the agent for retry. "
+        "Requires -n.",
+    )
+
+    parser.add_argument(
+        "--verify-retries",
+        dest="verify_retries",
+        type=int,
+        default=3,
+        metavar="N",
+        help="Max verification retry rounds (default: 3). Requires --verify-cmd.",
+    )
+
+    parser.add_argument(
         "-q",
         "--quiet",
         action="store_true",
@@ -1507,6 +1525,8 @@ def cli_main() -> None:
                     mcp_config_path=getattr(args, "mcp_config", None),
                     no_mcp=getattr(args, "no_mcp", False),
                     trust_project_mcp=getattr(args, "trust_project_mcp", False),
+                    verify_cmd=getattr(args, "verify_cmd", None),
+                    verify_retries=getattr(args, "verify_retries", 3),
                 )
             )
             sys.exit(exit_code)

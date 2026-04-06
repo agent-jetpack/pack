@@ -189,6 +189,202 @@ class ShellAllowListMiddleware(AgentMiddleware):
         return await handler(request)
 
 
+class EditVerificationMiddleware(AgentMiddleware):
+    """Surface edit_file failures explicitly so the agent knows the edit didn't apply.
+
+    When ``edit_file`` returns a result indicating the ``old_string`` was not
+    found, this middleware appends a clear warning to the tool message so the
+    agent can re-read the file and retry with corrected context.
+    """
+
+    _EDIT_TOOL_NAMES = frozenset({"edit_file"})
+    _FAILURE_INDICATORS = (
+        "old_string was not found",
+        "No match found",
+        "not found in file",
+        "no changes were made",
+    )
+
+    def _check_result(self, result: ToolMessage | Command[Any], tool_name: str) -> ToolMessage | Command[Any]:
+        from langchain_core.messages import ToolMessage as LCToolMessage
+
+        if tool_name not in self._EDIT_TOOL_NAMES:
+            return result
+        if not isinstance(result, LCToolMessage):
+            return result
+        content = result.content if isinstance(result.content, str) else str(result.content)
+        if any(indicator in content.lower() for indicator in (i.lower() for i in self._FAILURE_INDICATORS)):
+            return LCToolMessage(
+                content=(
+                    f"{content}\n\n⚠️ EDIT FAILED: The old_string was not found "
+                    "in the file. The file was NOT modified. Re-read the file to "
+                    "see its actual content before retrying."
+                ),
+                name=result.name,
+                tool_call_id=result.tool_call_id,
+                status="error",
+            )
+        return result
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
+    ) -> ToolMessage | Command[Any]:
+        tool_name = request.tool_call.get("name", "")
+        result = handler(request)
+        return self._check_result(result, tool_name)
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
+    ) -> ToolMessage | Command[Any]:
+        tool_name = request.tool_call.get("name", "")
+        result = await handler(request)
+        return self._check_result(result, tool_name)
+
+
+class PythonSyntaxCheckMiddleware(AgentMiddleware):
+    """Run ``ast.parse()`` after writing ``.py`` files to catch syntax errors early.
+
+    Only active in non-interactive mode to avoid slowing interactive workflows.
+    When a syntax error is found, a warning is appended to the tool result so
+    the agent can fix the file before moving on.
+    """
+
+    _WRITE_TOOL_NAMES = frozenset({"write_file"})
+
+    def _check_syntax(self, result: ToolMessage | Command[Any], tool_name: str, args: dict) -> ToolMessage | Command[Any]:
+        from langchain_core.messages import ToolMessage as LCToolMessage
+
+        if tool_name not in self._WRITE_TOOL_NAMES:
+            return result
+        if not isinstance(result, LCToolMessage):
+            return result
+
+        file_path = args.get("file_path", "") or args.get("path", "")
+        if not file_path.endswith(".py"):
+            return result
+
+        # Try to parse the content that was written
+        content = args.get("content", "")
+        if not content:
+            return result
+
+        import ast
+
+        try:
+            ast.parse(content, filename=file_path)
+        except SyntaxError as e:
+            warning = (
+                f"\n\n⚠️ SYNTAX ERROR in {file_path} at line {e.lineno}: "
+                f"{e.msg}. The file was written but contains invalid Python. "
+                "Fix the syntax before proceeding."
+            )
+            return LCToolMessage(
+                content=f"{result.content}{warning}" if isinstance(result.content, str) else str(result.content) + warning,
+                name=result.name,
+                tool_call_id=result.tool_call_id,
+            )
+        return result
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
+    ) -> ToolMessage | Command[Any]:
+        tool_name = request.tool_call.get("name", "")
+        args = request.tool_call.get("args") or {}
+        result = handler(request)
+        return self._check_syntax(result, tool_name, args)
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
+    ) -> ToolMessage | Command[Any]:
+        tool_name = request.tool_call.get("name", "")
+        args = request.tool_call.get("args") or {}
+        result = await handler(request)
+        return self._check_syntax(result, tool_name, args)
+
+
+class ToolCallLeakDetectionMiddleware(AgentMiddleware):
+    """Detect raw tool call syntax leaked into AI message text.
+
+    Some models (notably DeepSeek) occasionally emit their internal tool-call
+    markup as literal text instead of structured tool invocations. This
+    middleware scans AI message content for known leak patterns and strips them,
+    logging a warning so operators can track the issue.
+    """
+
+    _LEAK_PATTERNS = (
+        "<｜tool▁calls▁begin｜>",
+        "<｜tool▁call▁begin｜>",
+        "<｜tool▁sep｜>",
+        "<｜tool▁call▁end｜>",
+        "<｜tool▁calls▁end｜>",
+    )
+
+    @staticmethod
+    def _strip_code_fences(text: str) -> str:
+        """Remove content inside code fences to avoid false positives."""
+        import re
+
+        return re.sub(r"```.*?```", "", text, flags=re.DOTALL)
+
+    def _contains_leak(self, text: str) -> bool:
+        stripped = self._strip_code_fences(text)
+        return any(pattern in stripped for pattern in self._LEAK_PATTERNS)
+
+    def _clean_leaked_text(self, text: str) -> str:
+        import re
+
+        for pattern in self._LEAK_PATTERNS:
+            text = text.replace(pattern, "")
+        # Also strip any JSON-like tool call blocks between the markers
+        text = re.sub(
+            r"function<｜tool▁sep｜>.*?(?=<｜|$)",
+            "",
+            text,
+            flags=re.DOTALL,
+        )
+        return text.strip()
+
+    def wrap_model_call(
+        self,
+        messages: list,
+        handler: Callable[[list], Any],
+    ) -> Any:
+        result = handler(messages)
+        if hasattr(result, "content") and isinstance(result.content, str):
+            if self._contains_leak(result.content):
+                logger.warning(
+                    "Tool call syntax leak detected in AI response — "
+                    "stripping leaked content (model: %s)",
+                    getattr(result, "response_metadata", {}).get("model", "unknown"),
+                )
+                result.content = self._clean_leaked_text(result.content)
+        return result
+
+    async def awrap_model_call(
+        self,
+        messages: list,
+        handler: Callable[[list], Awaitable[Any]],
+    ) -> Any:
+        result = await handler(messages)
+        if hasattr(result, "content") and isinstance(result.content, str):
+            if self._contains_leak(result.content):
+                logger.warning(
+                    "Tool call syntax leak detected in AI response — "
+                    "stripping leaked content (model: %s)",
+                    getattr(result, "response_metadata", {}).get("model", "unknown"),
+                )
+                result.content = self._clean_leaked_text(result.content)
+        return result
+
+
 def load_async_subagents(config_path: Path | None = None) -> list[AsyncSubAgent]:
     """Load async subagent definitions from `config.toml`.
 
@@ -469,6 +665,85 @@ def build_model_identity_section(
     return section
 
 
+def _build_environment_bootstrap(cwd: Path) -> str:
+    """Capture environment context for non-interactive mode.
+
+    Pre-loads system state so the agent starts with full context
+    instead of wasting tool calls on discovery.
+
+    Args:
+        cwd: The user's working directory.
+
+    Returns:
+        A formatted string with environment details, capped at ~1500 tokens.
+    """
+    import subprocess
+
+    sections: list[str] = []
+
+    # Git status
+    try:
+        git_out = subprocess.run(
+            ["git", "status", "--short"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if git_out.returncode == 0 and git_out.stdout.strip():
+            status = git_out.stdout.strip()[:500]
+            sections.append(f"**Git status:**\n```\n{status}\n```")
+
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        if branch.returncode == 0 and branch.stdout.strip():
+            sections.append(f"**Branch:** `{branch.stdout.strip()}`")
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    # Directory tree (top-level only)
+    try:
+        items = sorted(p.name for p in cwd.iterdir() if not p.name.startswith("."))
+        if items:
+            listing = "  ".join(items[:30])
+            sections.append(f"**Files in workspace:** {listing}")
+    except OSError:
+        pass
+
+    # Language versions
+    for cmd, label in [
+        (["python3", "--version"], "Python"),
+        (["node", "--version"], "Node"),
+        (["gcc", "--version"], "GCC"),
+    ]:
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+            if result.returncode == 0:
+                ver = result.stdout.strip().split("\n")[0]
+                sections.append(f"**{label}:** {ver}")
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    if not sections:
+        return ""
+
+    return (
+        "\n## Environment Context\n\n"
+        + "\n".join(sections)
+        + "\n\n"
+    )
+
+
 def get_system_prompt(
     assistant_id: str,
     sandbox_type: str | None = None,
@@ -529,7 +804,10 @@ def get_system_prompt(
             "You received a single task and must complete it fully and "
             "autonomously. There is no human available to answer follow-up "
             "questions, so do NOT ask for clarification — make reasonable "
-            "assumptions and proceed."
+            "assumptions and proceed.\n\n"
+            "Complete the task fully. Do not ask follow-up questions, suggest "
+            "manual steps, or say 'Would you like me to...'. If a step fails, "
+            "try an alternative approach automatically."
         )
         ambiguity_guidance = (
             "- Do NOT ask clarifying questions — there is no human to answer "
@@ -540,7 +818,25 @@ def get_system_prompt(
             "available to respond to prompts. Examples: `npm init -y` not "
             "`npm init`, `apt-get install -y` not `apt-get install`, "
             "`yes |` or `--no-input`/`--non-interactive` flags where "
-            "available. Never run commands that block waiting for stdin."
+            "available. Never run commands that block waiting for stdin.\n"
+            "- After writing a file, verify it exists and is non-empty using "
+            "`ls` or `read_file`. After running a shell command, check the "
+            "exit code and inspect output for errors.\n"
+            "- When a task involves arithmetic, byte operations, data "
+            "transformations, or processing structured data, write and "
+            "execute a script — never attempt computation in your text "
+            "response.\n"
+            "- Use exact names, identifiers, class names, and file paths "
+            "specified in the task. Do not rename, abbreviate, or 'improve' "
+            "them.\n"
+            "- Never write code only in your text response. If you produce "
+            "code, it must go into a file via `write_file` or be executed "
+            "via the shell tool. Describing code without saving or running "
+            "it does not complete the task.\n"
+            "- If a file read appears truncated or incomplete, do not stop — "
+            "read the next section with `offset`, or use `grep` to find "
+            "relevant patterns. Never conclude a file lacks content based on "
+            "only the first 100 lines."
         )
 
     model_identity_section = build_model_identity_section(
@@ -594,12 +890,17 @@ def get_system_prompt(
             f"- Never use relative paths - always construct full absolute paths\n\n"
         )
 
+    # Build environment bootstrap for non-interactive mode
+    env_bootstrap = ""
+    if not interactive and cwd is not None:
+        env_bootstrap = _build_environment_bootstrap(Path(cwd) if not isinstance(cwd, Path) else cwd)
+
     result = (
         template.replace("{mode_description}", mode_description)
         .replace("{interactive_preamble}", interactive_preamble)
         .replace("{ambiguity_guidance}", ambiguity_guidance)
         .replace("{model_identity_section}", model_identity_section)
-        .replace("{working_dir_section}", working_dir_section)
+        .replace("{working_dir_section}", working_dir_section + env_bootstrap)
         .replace("{skills_path}", skills_path)
     )
 
@@ -921,6 +1222,24 @@ def create_cli_agent(
             - `composite_backend`: `CompositeBackend` for file operations
     """
     tools = tools or []
+
+    # Non-interactive mode: filter out noisy MCP tools that add to the tool
+    # surface without helping task completion. Droid's research shows tool
+    # reliability is the primary bottleneck — fewer tools = lower compound
+    # error rate.
+    if not interactive and tools:
+        _NI_TOOL_EXCLUDE_PREFIXES = (
+            "docs-",       # Documentation search tools (langchain docs, etc.)
+            "reference-",  # API reference lookup tools
+        )
+        tools = [
+            t for t in tools
+            if not any(
+                getattr(t, "name", "").startswith(prefix)
+                for prefix in _NI_TOOL_EXCLUDE_PREFIXES
+            )
+        ]
+
     effective_cwd = (
         Path(cwd)
         if cwd is not None
@@ -1119,6 +1438,12 @@ def create_cli_agent(
         agent_middleware.append(ShellAllowListMiddleware(restrictive_shell_allow_list))
         shell_middleware_added = True
 
+    # Always-on tool result middleware: edit verification + syntax checks
+    agent_middleware.append(EditVerificationMiddleware())
+    if not interactive:
+        agent_middleware.append(PythonSyntaxCheckMiddleware())
+        agent_middleware.append(ToolCallLeakDetectionMiddleware())
+
     # Get or use custom system prompt
     if system_prompt is None:
         system_prompt = get_system_prompt(
@@ -1168,11 +1493,55 @@ def create_cli_agent(
             routes={},
         )
 
-    from deepagents.middleware.summarization import create_summarization_tool_middleware
-
-    agent_middleware.append(
-        create_summarization_tool_middleware(model, composite_backend)
+    from deepagents.middleware.summarization import (
+        SummarizationMiddleware,
+        SummarizationToolMiddleware,
+        compute_summarization_defaults,
+        create_summarization_tool_middleware,
     )
+
+    if interactive:
+        agent_middleware.append(
+            create_summarization_tool_middleware(model, composite_backend)
+        )
+    else:
+        # Non-interactive mode: use more aggressive compaction thresholds to
+        # proactively manage context — following the Goose/Droid pattern of
+        # treating context management as a first-class loop concern rather
+        # than an emergency measure. Still wrap in SummarizationToolMiddleware
+        # to keep compact_conversation available.
+        #
+        # Uses fractional thresholds when the model has profile info, falling
+        # back to absolute token/message counts for models without profiles
+        # (60% of typical 85% default => ~120K tokens).
+        from langchain.chat_models import BaseChatModel as RuntimeBaseChatModel
+
+        if isinstance(model, RuntimeBaseChatModel):
+            defaults = compute_summarization_defaults(model)
+            # Detect whether the default uses fractions (model has profile)
+            # or absolute counts (model without profile) and set aggressive
+            # thresholds in the same unit type.
+            if defaults["trigger"][0] == "fraction":
+                trigger = ("fraction", 0.60)
+                keep = ("fraction", 0.15)
+            else:
+                # Absolute token trigger — more aggressive than 170K default
+                trigger = ("tokens", 120000)
+                keep = ("messages", 10)
+            summarization = SummarizationMiddleware(
+                model=model,
+                backend=composite_backend,
+                trigger=trigger,
+                keep=keep,
+                trim_tokens_to_summarize=None,
+                truncate_args_settings=defaults["truncate_args_settings"],
+            )
+            agent_middleware.append(SummarizationToolMiddleware(summarization))
+        else:
+            # Fallback to default if model isn't resolved yet
+            agent_middleware.append(
+                create_summarization_tool_middleware(model, composite_backend)
+            )
 
     # Create the agent
     all_subagents: list[SubAgent | CompiledSubAgent | AsyncSubAgent] = [
