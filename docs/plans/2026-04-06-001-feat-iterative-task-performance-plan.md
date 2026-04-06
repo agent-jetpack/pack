@@ -1,7 +1,7 @@
 ---
 title: "feat: Close the iterative-task gap — doom loop, error reflection, retry, slim prompt"
 type: feat
-status: active
+status: completed
 date: 2026-04-06
 origin: docs/plans/tb2-harbor-run-feedback.md
 ---
