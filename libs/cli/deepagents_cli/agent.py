@@ -385,6 +385,165 @@ class ToolCallLeakDetectionMiddleware(AgentMiddleware):
         return result
 
 
+class DoomLoopDetectionMiddleware(AgentMiddleware):
+    """Detect repeated identical tool calls and inject a redirect message.
+
+    Tracks recent tool calls as ``(name, args_hash)`` tuples. When 3+
+    consecutive identical calls are detected, a warning is appended telling
+    the agent to try a different approach. Follows ForgeCode's doom loop
+    detection pattern.
+    """
+
+    _THRESHOLD = 3
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._history: list[tuple[str, int]] = []
+
+    def _signature(self, request: ToolCallRequest) -> tuple[str, int]:
+        import hashlib
+
+        name = request.tool_call.get("name", "")
+        args = request.tool_call.get("args") or {}
+        args_hash = int(hashlib.md5(str(sorted(args.items())).encode()).hexdigest()[:8], 16)  # noqa: S324
+        return (name, args_hash)
+
+    def _is_doom_loop(self) -> int:
+        """Return the consecutive repeat count, or 0 if no loop detected."""
+        if len(self._history) < self._THRESHOLD:
+            return 0
+        last = self._history[-1]
+        count = 0
+        for sig in reversed(self._history):
+            if sig == last:
+                count += 1
+            else:
+                break
+        return count if count >= self._THRESHOLD else 0
+
+    def _inject_warning(self, result: ToolMessage | Command[Any], count: int) -> ToolMessage | Command[Any]:
+        from langchain_core.messages import ToolMessage as LCToolMessage
+
+        if not isinstance(result, LCToolMessage):
+            return result
+        warning = (
+            f"\n\n⚠️ STUCK: You have made {count} identical tool calls in a row. "
+            "You are NOT making progress. STOP and try a completely different "
+            "approach. Do NOT retry the same command or arguments."
+        )
+        return LCToolMessage(
+            content=f"{result.content}{warning}" if isinstance(result.content, str) else str(result.content) + warning,
+            name=result.name,
+            tool_call_id=result.tool_call_id,
+            status=getattr(result, "status", None),
+        )
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
+    ) -> ToolMessage | Command[Any]:
+        sig = self._signature(request)
+        self._history.append(sig)
+        result = handler(request)
+        count = self._is_doom_loop()
+        if count:
+            logger.warning("Doom loop detected: %d identical calls to %s", count, sig[0])
+            return self._inject_warning(result, count)
+        return result
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
+    ) -> ToolMessage | Command[Any]:
+        sig = self._signature(request)
+        self._history.append(sig)
+        result = await handler(request)
+        count = self._is_doom_loop()
+        if count:
+            logger.warning("Doom loop detected: %d identical calls to %s", count, sig[0])
+            return self._inject_warning(result, count)
+        return result
+
+
+class ErrorReflectionMiddleware(AgentMiddleware):
+    """Force the agent to reflect on tool failures before retrying.
+
+    When a tool call returns an error (non-zero exit code, error status,
+    or failure indicator in content), appends a reflection prompt demanding
+    the agent analyze what went wrong before making the next call.
+    """
+
+    _SHELL_TOOL_NAMES = frozenset({"execute", "shell"})
+    _ERROR_INDICATORS = (
+        "error:",
+        "Error:",
+        "ERROR:",
+        "Traceback",
+        "FAILED",
+        "command not found",
+        "No such file",
+        "Permission denied",
+    )
+
+    def _needs_reflection(self, result: ToolMessage | Command[Any], tool_name: str) -> bool:
+        from langchain_core.messages import ToolMessage as LCToolMessage
+
+        if not isinstance(result, LCToolMessage):
+            return False
+        # Check status field
+        if getattr(result, "status", None) == "error":
+            return True
+        content = result.content if isinstance(result.content, str) else str(result.content)
+        # For shell tools: check for non-zero exit code patterns
+        if tool_name in self._SHELL_TOOL_NAMES:
+            if any(ind in content for ind in self._ERROR_INDICATORS):
+                return True
+        return False
+
+    def _inject_reflection(self, result: ToolMessage | Command[Any]) -> ToolMessage | Command[Any]:
+        from langchain_core.messages import ToolMessage as LCToolMessage
+
+        if not isinstance(result, LCToolMessage):
+            return result
+        reflection = (
+            "\n\n⚠️ TOOL FAILED. Before retrying, you MUST reflect:\n"
+            "1. What exactly went wrong with this tool call?\n"
+            "2. Why did it fail — wrong tool, wrong arguments, or wrong approach?\n"
+            "3. What specific change will you make before retrying?\n"
+            "Do NOT retry the same command without changes."
+        )
+        return LCToolMessage(
+            content=f"{result.content}{reflection}" if isinstance(result.content, str) else str(result.content) + reflection,
+            name=result.name,
+            tool_call_id=result.tool_call_id,
+            status=getattr(result, "status", None),
+        )
+
+    def wrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], ToolMessage | Command[Any]],
+    ) -> ToolMessage | Command[Any]:
+        tool_name = request.tool_call.get("name", "")
+        result = handler(request)
+        if self._needs_reflection(result, tool_name):
+            return self._inject_reflection(result)
+        return result
+
+    async def awrap_tool_call(
+        self,
+        request: ToolCallRequest,
+        handler: Callable[[ToolCallRequest], Awaitable[ToolMessage | Command[Any]]],
+    ) -> ToolMessage | Command[Any]:
+        tool_name = request.tool_call.get("name", "")
+        result = await handler(request)
+        if self._needs_reflection(result, tool_name):
+            return self._inject_reflection(result)
+        return result
+
+
 def load_async_subagents(config_path: Path | None = None) -> list[AsyncSubAgent]:
     """Load async subagent definitions from `config.toml`.
 
@@ -1438,8 +1597,10 @@ def create_cli_agent(
         agent_middleware.append(ShellAllowListMiddleware(restrictive_shell_allow_list))
         shell_middleware_added = True
 
-    # Always-on tool result middleware: edit verification + syntax checks
+    # Always-on tool result middleware: edit verification, doom loop, error reflection
     agent_middleware.append(EditVerificationMiddleware())
+    agent_middleware.append(DoomLoopDetectionMiddleware())
+    agent_middleware.append(ErrorReflectionMiddleware())
     if not interactive:
         agent_middleware.append(PythonSyntaxCheckMiddleware())
         agent_middleware.append(ToolCallLeakDetectionMiddleware())

@@ -40,6 +40,74 @@ if TYPE_CHECKING:
 from deepagents_harbor.backend import HarborSandbox
 from deepagents_harbor.metadata import InfraMetadata, collect_sandbox_metadata
 
+_RETRY_MAX_ATTEMPTS = 3
+_RETRY_BASE_DELAY = 2.0  # seconds
+_RETRYABLE_ERRORS = (
+    ConnectionError,
+    TimeoutError,
+    OSError,
+)
+
+
+async def _invoke_with_retry(
+    agent: Any,
+    input_data: dict,
+    config: Any,
+    *,
+    max_attempts: int = _RETRY_MAX_ATTEMPTS,
+) -> dict:
+    """Invoke an agent with retry on transient errors.
+
+    Retries on connection errors, timeouts, and server disconnects with
+    exponential backoff. Non-transient errors (validation, auth) are
+    raised immediately.
+    """
+    import asyncio as _asyncio
+
+    last_exc: BaseException | None = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return await agent.ainvoke(input_data, config=config)
+        except _RETRYABLE_ERRORS as exc:
+            last_exc = exc
+            if attempt < max_attempts:
+                delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                logger.warning(
+                    "Agent invocation failed (attempt %d/%d): %s. Retrying in %.1fs",
+                    attempt,
+                    max_attempts,
+                    exc,
+                    delay,
+                )
+                await _asyncio.sleep(delay)
+            else:
+                logger.error(
+                    "Agent invocation failed after %d attempts: %s",
+                    max_attempts,
+                    exc,
+                )
+        except Exception as exc:
+            # Check for server disconnect messages in the error string
+            err_str = str(exc).lower()
+            if any(
+                s in err_str
+                for s in ("server disconnected", "connection reset", "eof", "broken pipe")
+            ):
+                last_exc = exc
+                if attempt < max_attempts:
+                    delay = _RETRY_BASE_DELAY * (2 ** (attempt - 1))
+                    logger.warning(
+                        "Server disconnect (attempt %d/%d): %s. Retrying in %.1fs",
+                        attempt,
+                        max_attempts,
+                        exc,
+                        delay,
+                    )
+                    await _asyncio.sleep(delay)
+                    continue
+            raise
+    raise last_exc  # type: ignore[misc]
+
 logger = logging.getLogger(__name__)
 
 # Load .env file if present
@@ -47,10 +115,42 @@ load_dotenv()
 
 _MAX_FILE_LISTING = 10  # maximum files shown in the system prompt directory context
 
-SYSTEM_MESSAGE = """
-You are an autonomous agent executing tasks in a sandboxed environment. Follow these instructions carefully.
+SYSTEM_MESSAGE = """\
+You are an expert autonomous agent executing tasks in a sandboxed Linux environment. Complete the task fully and autonomously. There is no human to answer questions.
 
-## WORKING DIRECTORY & ENVIRONMENT CONTEXT
+## Core Rules
+
+- **Verify after every write.** After writing a file, confirm it exists and is non-empty. After running a shell command, check the exit code and inspect output for errors.
+- **Compute with tools, not reasoning.** When a task involves arithmetic, byte operations, data transforms, or processing structured data — write and execute a script. Never attempt computation in your text response.
+- **Use exact names.** Use exact identifiers, class names, file paths, and field names specified in the task. Do not rename or "improve" them.
+- **Read the task name carefully.** The task name often contains the key action (e.g., "break-filter" means bypass/defeat the filter, not build one).
+- **Code goes in files.** Never write code only in your text response. All code must go into files via write/patch or be executed via shell.
+- **Read more, not less.** If a file read appears truncated, read the next section or use grep to find relevant patterns. Never conclude a file lacks content from only the first 100 lines.
+- **Parallel tool calls.** When you need multiple independent operations, invoke all relevant tools simultaneously.
+- **No questions.** Do not ask follow-up questions or suggest manual steps. Make reasonable assumptions and proceed.
+- **Non-interactive commands.** Always use non-interactive variants: `apt-get install -y`, `npm init -y`, `yes |`, etc.
+
+## Task Management
+
+ALWAYS create a task plan before starting work. Break the task into steps using the todo tool. Mark each step complete ONLY after executing AND verifying it works. Do not batch completions. If a step fails, add a new step for the fix rather than silently retrying the same approach.
+
+## Performance Tasks
+
+When the task mentions "faster", "speed", "performance", "optimize", or "benchmark":
+1. Write your initial implementation
+2. Run the benchmark or timing test provided
+3. If not fast enough, analyze bottlenecks and optimize
+4. Repeat until the performance target is met or you've tried 3 different approaches
+Never submit a performance-sensitive solution without benchmarking it first.
+
+## When Things Go Wrong
+
+- If a tool call fails, STOP and reflect: What went wrong? Why? What specific change will you make?
+- If you've tried the same approach 3 times without progress, try a fundamentally different strategy.
+- If a shell command fails with a network error, retry it once before giving up.
+- Work backwards from the user's goal. Don't keep retrying the same broken approach.
+
+## Environment
 
 Your current working directory is:
 {current_directory}
@@ -58,11 +158,7 @@ Your current working directory is:
 {file_listing_header}
 {file_listing}
 
-**IMPORTANT**: This directory information is provided for your convenience at the start of the task. You should:
-- Use this information to understand the initial environment state
-- Avoid redundantly calling `ls` or similar commands just to list the same directory
-- Only use file listing commands if you need updated information (after creating/deleting files) or need to explore subdirectories
-- Work in the /app directory unless explicitly instructed otherwise
+Work in /app unless explicitly instructed otherwise. All file paths must be absolute.
 """
 
 
@@ -233,33 +329,20 @@ class DeepAgentsWrapper(BaseAgent):
 
         # Create agent based on mode (CLI vs SDK)
         if self._use_cli_agent:
-            # Get Harbor's directory context to append to the CLI's system prompt
+            # Use the slim Harbor-specific prompt (not the 300-line CLI prompt)
             harbor_system_prompt = await self._get_formatted_system_prompt(backend)
 
-            # Build the full system prompt: CLI's hardened non-interactive prompt
-            # (with verify-after-write, compute-with-tools, exact-naming rules)
-            # + Harbor's directory context appended at the end.
-            from deepagents_cli.agent import get_system_prompt
-
-            cli_prompt = get_system_prompt(
-                assistant_id=environment.session_id,
-                sandbox_type=None,
-                interactive=False,  # Activate non-interactive hardening rules
-            )
-            combined_prompt = cli_prompt + "\n\n" + harbor_system_prompt
-
-            # Use CLI agent with auto-approve mode and non-interactive hardening
             deep_agent, _ = create_cli_agent(
                 model=self._model,
                 assistant_id=environment.session_id,
                 sandbox=backend,
                 sandbox_type=None,
-                system_prompt=combined_prompt,
-                interactive=False,  # Activates middleware: edit verification, syntax check, leak detection
-                auto_approve=True,  # Skip HITL in Harbor
+                system_prompt=harbor_system_prompt,
+                interactive=False,  # Activates middleware: edit verification, syntax check, leak detection, doom loop
+                auto_approve=True,
                 enable_memory=False,
                 enable_skills=False,
-                enable_shell=False,  # Sandbox provides execution
+                enable_shell=False,
             )
         else:
             # Use SDK agent
@@ -318,20 +401,20 @@ class DeepAgentsWrapper(BaseAgent):
                 project_name=langsmith_experiment_name,
                 metadata=metadata,
             ) as run_tree:
-                # Invoke deep agent with LangSmith tracing
-                result = await deep_agent.ainvoke(
+                result = await _invoke_with_retry(
+                    deep_agent,
                     {"messages": [{"role": "user", "content": instruction}]},
-                    config=config,
+                    config,
                 )
-                # Extract last AI message and add as output
                 last_message = result["messages"][-1]
                 if isinstance(last_message, AIMessage):
                     run_tree.end(outputs={"last_message": last_message.text})
         else:
             config["metadata"] = metadata
-            result = await deep_agent.ainvoke(
+            result = await _invoke_with_retry(
+                deep_agent,
                 {"messages": [{"role": "user", "content": instruction}]},
-                config=config,
+                config,
             )
 
         self._save_trajectory(environment, instruction, result, infra_meta)
