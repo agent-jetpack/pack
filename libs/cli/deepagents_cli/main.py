@@ -1277,8 +1277,10 @@ def cli_main() -> None:
             try:
                 model_params = json.loads(raw_kwargs)
             except json.JSONDecodeError as e:
+                from rich.markup import escape
+
                 console.print(
-                    f"[bold red]Error:[/bold red] --model-params is not valid JSON: {e}"
+                    f"[bold red]Error:[/bold red] --model-params is not valid JSON: {escape(str(e))}"
                 )
                 sys.exit(1)
             if not isinstance(model_params, dict):
@@ -1293,9 +1295,11 @@ def cli_main() -> None:
             try:
                 profile_override = json.loads(raw_profile)
             except json.JSONDecodeError as e:
+                from rich.markup import escape
+
                 console.print(
                     "[bold red]Error:[/bold red] "
-                    f"--profile-override is not valid JSON: {e}"
+                    f"--profile-override is not valid JSON: {escape(str(e))}"
                 )
                 sys.exit(1)
             if not isinstance(profile_override, dict):
