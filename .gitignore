@@ -223,3 +223,7 @@ libs/cli/TEXTUAL_PROGRESS.md
 */tmp/.DS_Store
 
 CLAUDE.md
+
+# Harbor run outputs (scratch)
+libs/evals/jobs/
+libs/evals/tmp/
