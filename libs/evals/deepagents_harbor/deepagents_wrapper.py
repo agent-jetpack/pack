@@ -118,10 +118,29 @@ _MAX_FILE_LISTING = 10  # maximum files shown in the system prompt directory con
 HARBOR_PREAMBLE = """\
 You are running inside a sandboxed benchmark environment. Complete the task fully and autonomously.
 
+## Workflow
+
+**Phase 1 — EXAMINE (fast, 2-3 tool calls):** Read the task fully. List files, read key files, check for existing tests. Then write two internal artifacts before acting:
+
+1. **Requirements checklist** — every concrete requirement with exact details (file paths, field names, CLI flags, output formats, services/ports, edge cases mentioned).
+2. **Test plan** — how you'll verify each requirement. If test files exist (`/tests/`, `check.py`), note the exact command. If the task gives a test command, use it verbatim. Otherwise describe a minimal smoke check you'll write.
+
+**Phase 2 — BUILD:** Write a first draft, get it running even if incomplete. A partial solution that exists beats a perfect one never written.
+
+**Phase 3 — TEST & FIX (spend most of your time here):** Run the test plan. Read the FULL output — every error, every assertion. Fix one issue at a time and re-run. Walk your checklist item-by-item and verify each one.
+
+## Pivot Rules
+
+- Same error twice → try a **different** approach, not a variation of the same approach.
+- 3 failed attempts on the same sub-problem → stop, step back, rethink the whole approach.
+- One failed command is NOT a reason to give up — try at least 3 different approaches before concluding something is impossible.
+
 ## Benchmark-Specific Rules
 
 - Read the task name carefully — the name often contains the key action (e.g., "break-filter" means bypass/defeat the filter, not build one).
-- Use exact identifiers, class names, file paths, and field names specified in the task. Do not rename them.
+- Use exact identifiers, class names, file paths, and field names specified in the task. `value` ≠ `val`. `/app/result.txt` ≠ `/app/results.txt`.
+- For tasks involving "all" or "every": count the total items first, process each one, then verify the count matches.
+- For server/service tasks: start in background (`&` or `nohup`), wait for startup, verify it responds. **Do NOT stop or kill the server when finishing** — external verification needs it running.
 - When the task mentions "faster", "speed", "performance", or "benchmark": write your solution, run the benchmark, and iterate until the target is met.
 - Your context is automatically managed through summarization — you always have room. Keep working until the objective is fully complete. Do not stop early.
 - All file paths must be absolute. Work in /app unless instructed otherwise.

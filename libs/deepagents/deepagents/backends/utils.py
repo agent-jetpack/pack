@@ -385,6 +385,46 @@ def truncate_if_too_long(result: list[str] | str) -> list[str] | str:
     return result
 
 
+EXECUTE_OUTPUT_MAX_LINES = 200
+"""Default line cap for verbose shell-execution output (compilation logs,
+MCMC iterations, etc.) before `truncate_execute_output` folds the middle."""
+
+
+def truncate_execute_output(
+    output: str,
+    max_lines: int = EXECUTE_OUTPUT_MAX_LINES,
+    saved_path: str | None = None,
+) -> tuple[str, bool]:
+    """Collapse the middle of a long execute-command output.
+
+    Keeps the first and last `max_lines // 2` lines and replaces the middle
+    with a short truncation notice. Designed for verbose command output that
+    would otherwise flood context (compilation logs, training loops, etc.).
+
+    Args:
+        output: Raw command output.
+        max_lines: Keep at most this many lines before truncating.
+        saved_path: If provided, included in the truncation notice so the
+            agent knows where the full output was archived.
+
+    Returns:
+        Tuple of `(output, was_truncated)`.
+    """
+    if not output:
+        return output, False
+    lines = output.split("\n")
+    if len(lines) <= max_lines:
+        return output, False
+    half = max_lines // 2
+    truncated_count = len(lines) - max_lines
+    notice = (
+        f"\n\n... [{truncated_count} lines truncated"
+        + (f" - full output saved to {saved_path}" if saved_path else "")
+        + "] ...\n\n"
+    )
+    return "\n".join(lines[:half]) + notice + "\n".join(lines[-half:]), True
+
+
 def validate_path(path: str, *, allowed_prefixes: Sequence[str] | None = None) -> str:
     r"""Validate and normalize file path for security.
 

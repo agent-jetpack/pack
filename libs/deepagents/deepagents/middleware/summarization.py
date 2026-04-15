@@ -1131,7 +1131,9 @@ def create_summarization_middleware(
         backend=backend,
         trigger=defaults["trigger"],
         keep=defaults["keep"],
-        trim_tokens_to_summarize=None,
+        # Cap summary-generation input at 100k tokens so a near-full context
+        # window doesn't produce a summarization call that itself overflows.
+        trim_tokens_to_summarize=100_000,
         truncate_args_settings=defaults["truncate_args_settings"],
     )
 
