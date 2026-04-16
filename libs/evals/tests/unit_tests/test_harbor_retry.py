@@ -50,21 +50,23 @@ def _raise(exc: BaseException):  # noqa: ANN202  # test helper
 
 @pytest.fixture
 def sleep_calls(monkeypatch):
-    """Replace asyncio.sleep inside the wrapper with a recorder.
+    """Replace asyncio.sleep and random.uniform so backoff is deterministic.
 
     Returns a list that accumulates every sleep duration the retry loop
-    requested, so tests can assert backoff cadence without actually waiting.
+    requested. ``random.uniform`` is stubbed to always return 0 so sleep
+    durations equal the exponential base exactly — letting tests assert
+    equality rather than one-sided ``>=`` bounds.
     """
     recorded: list[float] = []
 
     async def _fake_sleep(seconds: float) -> None:
         recorded.append(seconds)
 
-    # The wrapper module uses ``import asyncio as _asyncio`` inside the
-    # function, so patch asyncio.sleep at the module level.
     import asyncio
+    import random
 
     monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
+    monkeypatch.setattr(random, "uniform", lambda _lo, _hi: 0.0)
     return recorded
 
 
@@ -91,11 +93,8 @@ async def test_retry_success_after_one_connection_error(sleep_calls):
 
     assert result is expected
     assert len(agent.calls) == 2
-    # Current implementation sleeps exactly _RETRY_BASE_DELAY (2.0s) before
-    # attempt 2. Unit 2 will add jitter — the assertion below will need to
-    # tolerate a small addition; for now it pins the exact current value.
-    assert len(sleep_calls) == 1
-    assert sleep_calls[0] >= _RETRY_BASE_DELAY
+    # With random.uniform mocked to 0, sleep is exactly _RETRY_BASE_DELAY.
+    assert sleep_calls == [_RETRY_BASE_DELAY]
 
 
 @pytest.mark.asyncio
@@ -114,12 +113,8 @@ async def test_retry_success_on_third_attempt_with_backoff(sleep_calls):
 
     assert result is expected
     assert len(agent.calls) == 3
-    assert len(sleep_calls) == 2
-    # Exponential: base * 2**0, base * 2**1. Allow >= to accommodate jitter
-    # once Unit 2 lands.
-    assert sleep_calls[0] >= _RETRY_BASE_DELAY
-    assert sleep_calls[1] >= _RETRY_BASE_DELAY * 2
-    assert sleep_calls[1] > sleep_calls[0]
+    # Exponential: base * 2**0, base * 2**1. Jitter pinned to 0 by fixture.
+    assert sleep_calls == [_RETRY_BASE_DELAY, _RETRY_BASE_DELAY * 2]
 
 
 @pytest.mark.asyncio
@@ -334,3 +329,65 @@ async def test_metadata_annotation_is_noop_when_metadata_missing(sleep_calls):
 
     # Nothing injected — config stays minimal
     assert "metadata" not in config
+
+
+# --------------------------------------------------------------------------
+# SDK exception type coverage — guards against the P0 regression.
+# --------------------------------------------------------------------------
+
+
+def test_classifier_accepts_httpx_connect_error():
+    """httpx.ConnectError must be retryable — previously misclassified."""
+    import httpx
+
+    assert _is_transient_error(httpx.ConnectError("connection refused"))
+    assert _is_transient_error(httpx.ReadError("stream died"))
+    assert _is_transient_error(httpx.RemoteProtocolError("protocol"))
+
+
+def test_classifier_accepts_anthropic_connection_error_via_message():
+    """anthropic.APIConnectionError must be retryable.
+
+    Inherits from ``anthropic.APIError``, not ConnectionError/OSError.
+    Our fix widens ``_RETRYABLE_ERROR_TYPES`` to include it when the
+    anthropic SDK is installed.
+    """
+    try:
+        import anthropic
+    except ImportError:
+        pytest.skip("anthropic SDK not installed")
+
+    # APIConnectionError requires a request arg — construct minimally
+    exc = anthropic.APIConnectionError(request=None)  # type: ignore[arg-type]
+    assert _is_transient_error(exc)
+
+
+def test_classifier_accepts_exception_group_with_retryable_children():
+    """asyncio.TaskGroup raises BaseExceptionGroup wrapping sub-exceptions.
+
+    A group containing only transient errors must be retryable; the walker
+    unpacks ``.exceptions``.
+    """
+    # Python 3.11+
+    eg = BaseExceptionGroup(
+        "mixed", [ConnectionError("a"), TimeoutError("b")]
+    )
+    assert _is_transient_error(eg)
+
+
+def test_classifier_rejects_exception_group_with_only_programmer_errors():
+    """An ExceptionGroup of ValueErrors must not be retried."""
+    eg = BaseExceptionGroup("bad", [ValueError("x"), ValueError("y")])
+    assert not _is_transient_error(eg)
+
+
+def test_classifier_walks_nested_generic_disconnect_message():
+    """Nested RuntimeError with disconnect marker via __cause__ is retryable.
+
+    Previously misclassified because the string fallback only applied to
+    the outermost exception.
+    """
+    inner = RuntimeError("Server disconnected without sending a response")
+    outer = RuntimeError("middleware failure")
+    outer.__cause__ = inner
+    assert _is_transient_error(outer)

@@ -76,53 +76,154 @@ _RETRY_BASE_DELAY = 2.0  # seconds
 _RETRY_JITTER_MAX = 0.5  # seconds
 _RETRY_CHAIN_MAX_DEPTH = 10  # guards against cyclic __cause__ chains
 
-_RETRYABLE_ERROR_TYPES: tuple[type[BaseException], ...] = (
+_CORE_RETRYABLE_ERROR_TYPES: tuple[type[BaseException], ...] = (
     ConnectionError,
     TimeoutError,
     OSError,
 )
 
-# Only consulted as a fallback when the exception type is a bare generic
-# ``Exception`` or ``RuntimeError`` — provider SDKs sometimes raise these
-# with disconnect wording instead of a proper ``ConnectionError``.
+
+def _sdk_retryable_types() -> tuple[type[BaseException], ...]:
+    """Collect known-retryable exception types from installed provider SDKs.
+
+    langchain wraps httpx, httpcore, anthropic, and openai; each raises its
+    own connection/timeout/protocol exception classes that do NOT inherit
+    from ``ConnectionError`` / ``OSError``. Without this widening, the
+    dominant 36% Harbor failure mode (OpenRouter/Anthropic disconnects)
+    would not be caught by the type-based check and would fall through to
+    the string fallback — where the generic-type gate also excludes them.
+
+    Imports are guarded so the wrapper stays importable even when an SDK
+    is absent from the environment.
+    """
+    extra: list[type[BaseException]] = []
+    try:
+        import httpx
+
+        extra += [
+            httpx.ConnectError,
+            httpx.ReadError,
+            httpx.RemoteProtocolError,
+            httpx.TimeoutException,
+        ]
+    except ImportError:
+        pass
+    try:
+        import httpcore
+
+        extra += [
+            httpcore.ConnectError,
+            httpcore.ReadError,
+            httpcore.RemoteProtocolError,
+        ]
+    except ImportError:
+        pass
+    try:
+        import anthropic
+
+        extra += [anthropic.APIConnectionError, anthropic.APITimeoutError]
+    except ImportError:
+        pass
+    try:
+        import openai
+
+        extra += [openai.APIConnectionError, openai.APITimeoutError]
+    except ImportError:
+        pass
+    return tuple(extra)
+
+
+_RETRYABLE_ERROR_TYPES: tuple[type[BaseException], ...] = (
+    _CORE_RETRYABLE_ERROR_TYPES + _sdk_retryable_types()
+)
+
 _DISCONNECT_MARKERS: tuple[str, ...] = (
     "server disconnected",
     "connection reset",
     "eof",
     "broken pipe",
 )
-_GENERIC_ERROR_TYPES: tuple[type[BaseException], ...] = (Exception, RuntimeError)
+
+# Denylist for the string fallback. Programmer/data errors whose message
+# may incidentally contain a disconnect marker must not be retried. Any
+# type not in this list is eligible for string-based transient detection
+# — a deliberate inversion of the previous allowlist, which excluded the
+# SDK-specific exception types that are the actual 36% failure mode.
+_NON_RETRYABLE_TYPES_FOR_STRING_FALLBACK: tuple[type[BaseException], ...] = (
+    ValueError,
+    TypeError,
+    KeyError,
+    AttributeError,
+    AssertionError,
+    NameError,
+    SyntaxError,
+    ImportError,
+    LookupError,
+    ArithmeticError,
+)
 
 
 def _is_transient_error(exc: BaseException) -> bool:
     """Return True if ``exc`` looks like a transient I/O failure worth retrying.
 
     Checks, in order:
-    1. The exception (or any exception in its ``__cause__`` / ``__context__``
-       chain, up to ``_RETRY_CHAIN_MAX_DEPTH`` frames) is an instance of a
-       known retryable type.
-    2. The exception's type is a bare generic (``Exception`` or
-       ``RuntimeError``) and its message matches a known disconnect marker.
+    1. The exception — or any exception in its ``__cause__``/``__context__``
+       chain, or any sub-exception of a ``BaseExceptionGroup`` — is an
+       instance of a known retryable type (core Python exceptions plus
+       SDK-specific connection/timeout classes from httpx, httpcore,
+       anthropic, and openai).
+    2. The exception's type is NOT in the programmer-error denylist and
+       its message (or any chain member's message) matches a disconnect
+       marker.
 
-    The second rule is deliberately narrow — matching substrings on arbitrary
-    subclasses would misclassify too much (e.g., a ``ValueError`` whose
-    message happens to contain "eof").
+    The chain walk is depth-capped and cycle-guarded.
     """
-    seen: set[int] = set()
-    cur: BaseException | None = exc
-    depth = 0
-    while cur is not None and depth < _RETRY_CHAIN_MAX_DEPTH:
-        if id(cur) in seen:  # cyclic chain guard
-            break
-        seen.add(id(cur))
-        if isinstance(cur, _RETRYABLE_ERROR_TYPES):
-            return True
-        cur = cur.__cause__ or cur.__context__
-        depth += 1
+    if _chain_contains_retryable_type(exc):
+        return True
 
-    if type(exc) in _GENERIC_ERROR_TYPES:
-        msg = str(exc).lower()
-        return any(marker in msg for marker in _DISCONNECT_MARKERS)
+    if type(exc) in _NON_RETRYABLE_TYPES_FOR_STRING_FALLBACK:
+        return False
+
+    return _chain_contains_disconnect_marker(exc)
+
+
+def _walk_exception_chain(exc: BaseException):  # noqa: ANN202
+    """Yield ``exc`` plus its ``__cause__`` / ``__context__`` / ExceptionGroup
+    descendants, up to ``_RETRY_CHAIN_MAX_DEPTH`` nodes, cycle-guarded."""
+    seen: set[int] = set()
+    stack: list[BaseException] = [exc]
+    while stack and len(seen) < _RETRY_CHAIN_MAX_DEPTH:
+        cur = stack.pop()
+        if id(cur) in seen:
+            continue
+        seen.add(id(cur))
+        yield cur
+        if cur.__cause__ is not None:
+            stack.append(cur.__cause__)
+        if cur.__context__ is not None:
+            stack.append(cur.__context__)
+        # BaseExceptionGroup (Python 3.11+): unpack sub-exceptions
+        sub = getattr(cur, "exceptions", None)
+        if sub is not None:
+            for s in sub:
+                if isinstance(s, BaseException):
+                    stack.append(s)
+
+
+def _chain_contains_retryable_type(exc: BaseException) -> bool:
+    for node in _walk_exception_chain(exc):
+        if isinstance(node, _RETRYABLE_ERROR_TYPES):
+            return True
+    return False
+
+
+def _chain_contains_disconnect_marker(exc: BaseException) -> bool:
+    for node in _walk_exception_chain(exc):
+        if type(node) in _NON_RETRYABLE_TYPES_FOR_STRING_FALLBACK:
+            continue
+        msg = str(node).lower()
+        if any(marker in msg for marker in _DISCONNECT_MARKERS):
+            return True
     return False
 
 
@@ -223,6 +324,31 @@ def _annotate_config_metadata(
     meta["retry_terminated"] = terminated
     if final_exception_type is not None:
         meta["retry_final_exception_type"] = final_exception_type
+
+
+_RETRY_METADATA_KEYS = (
+    "retry_attempts",
+    "retry_terminated",
+    "retry_final_exception_type",
+)
+
+
+def _mirror_retry_metadata_to_trace(run_tree: Any, metadata: dict[str, Any]) -> None:
+    """Copy retry annotations onto the LangSmith RunTree explicitly.
+
+    Removes the assumption that ``trace(metadata=metadata)`` holds the same
+    dict object we later mutate via ``_annotate_config_metadata``. Some
+    LangSmith versions snapshot the metadata dict at trace creation, which
+    would otherwise leave retry annotations invisible in the UI.
+    """
+    if run_tree is None:
+        return
+    tree_meta = getattr(run_tree, "metadata", None)
+    if not isinstance(tree_meta, dict):
+        return
+    for key in _RETRY_METADATA_KEYS:
+        if key in metadata:
+            tree_meta[key] = metadata[key]
 
 logger = logging.getLogger(__name__)
 
@@ -540,11 +666,16 @@ class DeepAgentsWrapper(BaseAgent):
                             attempts=metadata.get("retry_attempts", 1),
                             reason="retry_exhausted" if _is_transient_error(exc) else "non_retryable",
                         )
+                        _mirror_retry_metadata_to_trace(run_tree, metadata)
                         run_tree.end(error=str(exc))
                         raise
-                    last_message = result["messages"][-1]
+                    _mirror_retry_metadata_to_trace(run_tree, metadata)
+                    messages = result.get("messages") or []
+                    last_message = messages[-1] if messages else None
                     if isinstance(last_message, AIMessage):
                         run_tree.end(outputs={"last_message": last_message.text})
+                    else:
+                        run_tree.end(outputs={})
             else:
                 try:
                     result = await _invoke_with_retry(deep_agent, invoke_input, config)
