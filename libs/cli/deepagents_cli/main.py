@@ -1606,6 +1606,16 @@ def cli_main() -> None:
             # Non-interactive mode - execute single task and exit
             from deepagents_cli.non_interactive import run_non_interactive
 
+            # When invoked via `uv run --directory`, uv calls chdir() to the
+            # package dir but leaves $PWD pointing at the user's original CWD.
+            # Propagate the original CWD so the agent's file operations resolve
+            # paths relative to where the user invoked the command.
+            if "DEEPAGENTS_USER_CWD" not in os.environ:
+                shell_pwd = os.environ.get("PWD", "")
+                actual_cwd = os.getcwd()
+                if shell_pwd and os.path.isdir(shell_pwd) and os.path.realpath(shell_pwd) != os.path.realpath(actual_cwd):
+                    os.environ["DEEPAGENTS_USER_CWD"] = shell_pwd
+
             exit_code = asyncio.run(
                 run_non_interactive(
                     message=args.non_interactive_message,
