@@ -356,6 +356,35 @@ logger = logging.getLogger(__name__)
 load_dotenv()
 
 _MAX_FILE_LISTING = 10  # maximum files shown in the system prompt directory context
+_OPENROUTER_TIMEOUT_SEC = 300  # per-request timeout for the OpenRouter httpx client
+
+
+def _patch_openrouter_timeout(model: Any) -> None:
+    """Replace the OpenRouter SDK's default 5s httpx timeout with a longer one.
+
+    The ``langchain_openrouter.ChatOpenRouter`` model delegates HTTP calls
+    to the OpenRouter SDK which creates an ``httpx.AsyncClient`` with the
+    default 5-second timeout.  Large-context agent calls (system prompt +
+    tools + conversation) routinely exceed this.  This function swaps the
+    SDK's internal async client for one with a generous timeout.
+    """
+    try:
+        import httpx as _httpx
+
+        sdk_cfg = getattr(getattr(model, "client", None), "sdk_configuration", None)
+        if sdk_cfg is None:
+            return
+        old = getattr(sdk_cfg, "async_client", None)
+        if old is None:
+            return
+        sdk_cfg.async_client = _httpx.AsyncClient(timeout=_httpx.Timeout(_OPENROUTER_TIMEOUT_SEC))
+        logger.debug(
+            "Patched OpenRouter httpx timeout: %ss -> %ss",
+            getattr(old, "timeout", "?"),
+            _OPENROUTER_TIMEOUT_SEC,
+        )
+    except Exception:
+        logger.debug("Could not patch OpenRouter timeout (model may not use OpenRouter SDK)", exc_info=True)
 
 HARBOR_PREAMBLE = """\
 You are running inside a sandboxed benchmark environment. Complete the task fully and autonomously.
@@ -455,7 +484,7 @@ class DeepAgentsWrapper(BaseAgent):
             if hasattr(model, "max_tokens"):
                 updates["max_tokens"] = 16384
             if hasattr(model, "timeout"):
-                updates["timeout"] = 60
+                updates["timeout"] = _OPENROUTER_TIMEOUT_SEC
             if hasattr(model, "max_retries"):
                 updates["max_retries"] = 0
             model = model.model_copy(update=updates)
@@ -477,6 +506,8 @@ class DeepAgentsWrapper(BaseAgent):
                 max_retries=0,
                 **model_kwargs,
             )
+
+        _patch_openrouter_timeout(self._model)
 
         self._temperature = temperature
         self._verbose = verbose
