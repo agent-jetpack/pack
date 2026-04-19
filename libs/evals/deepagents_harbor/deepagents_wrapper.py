@@ -360,31 +360,30 @@ _OPENROUTER_TIMEOUT_SEC = 300  # per-request timeout for the OpenRouter httpx cl
 
 
 def _patch_openrouter_timeout(model: Any) -> None:
-    """Replace the OpenRouter SDK's default 5s httpx timeout with a longer one.
+    """Replace the OpenRouter SDK client with one that has a proper timeout.
 
     The ``langchain_openrouter.ChatOpenRouter`` model delegates HTTP calls
-    to the OpenRouter SDK which creates an ``httpx.AsyncClient`` with the
-    default 5-second timeout.  Large-context agent calls (system prompt +
-    tools + conversation) routinely exceed this.  This function swaps the
-    SDK's internal async client for one with a generous timeout.
+    to the OpenRouter SDK which uses the default 5-second httpx timeout.
+    Large-context agent calls routinely exceed this.  This function creates
+    a new ``openrouter.OpenRouter`` client with ``timeout_ms`` set, which
+    the SDK uses to override per-request timeouts.
     """
     try:
-        import httpx as _httpx
+        import openrouter as _openrouter
 
-        sdk_cfg = getattr(getattr(model, "client", None), "sdk_configuration", None)
-        if sdk_cfg is None:
+        old_client = getattr(model, "client", None)
+        if old_client is None or not isinstance(old_client, _openrouter.OpenRouter):
             return
-        old = getattr(sdk_cfg, "async_client", None)
-        if old is None:
+        api_key = getattr(old_client.sdk_configuration.security, "api_key", None)
+        if not api_key:
             return
-        sdk_cfg.async_client = _httpx.AsyncClient(timeout=_httpx.Timeout(_OPENROUTER_TIMEOUT_SEC))
-        logger.debug(
-            "Patched OpenRouter httpx timeout: %ss -> %ss",
-            getattr(old, "timeout", "?"),
-            _OPENROUTER_TIMEOUT_SEC,
+        model.client = _openrouter.OpenRouter(
+            api_key=api_key,
+            timeout_ms=_OPENROUTER_TIMEOUT_SEC * 1000,
         )
+        logger.info("Patched OpenRouter client timeout to %ss", _OPENROUTER_TIMEOUT_SEC)
     except Exception:
-        logger.debug("Could not patch OpenRouter timeout (model may not use OpenRouter SDK)", exc_info=True)
+        logger.debug("Could not patch OpenRouter timeout", exc_info=True)
 
 HARBOR_PREAMBLE = """\
 You are running inside a sandboxed benchmark environment. Complete the task fully and autonomously.
