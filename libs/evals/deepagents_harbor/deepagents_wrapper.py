@@ -455,7 +455,9 @@ class DeepAgentsWrapper(BaseAgent):
             if hasattr(model, "max_tokens"):
                 updates["max_tokens"] = 16384
             if hasattr(model, "timeout"):
-                updates["timeout"] = 120
+                updates["timeout"] = 60
+            if hasattr(model, "max_retries"):
+                updates["max_retries"] = 0
             model = model.model_copy(update=updates)
             self._model = model
             self._model_name = model.model
@@ -471,7 +473,8 @@ class DeepAgentsWrapper(BaseAgent):
                 model_name,
                 temperature=temperature,
                 max_tokens=16384,
-                timeout=120,
+                timeout=60,
+                max_retries=0,
                 **model_kwargs,
             )
 
