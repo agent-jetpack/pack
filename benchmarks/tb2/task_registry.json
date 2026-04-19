@@ -1,0 +1,1108 @@
+{
+  "version": "2.0",
+  "task_count": 89,
+  "tasks": [
+    {
+      "id": "adaptive-rejection-sampler",
+      "difficulty": "medium",
+      "category": "scientific-computing",
+      "expert_min": 180.0,
+      "junior_min": 480.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "applied-statistics",
+        "adaptive-rejection-sampling",
+        "Bayesian-inference",
+        "simulation"
+      ]
+    },
+    {
+      "id": "bn-fit-modify",
+      "difficulty": "hard",
+      "category": "scientific-computing",
+      "expert_min": 480.0,
+      "junior_min": 1000.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "bayesian-network",
+        "stats"
+      ]
+    },
+    {
+      "id": "break-filter-js-from-html",
+      "difficulty": "medium",
+      "category": "security",
+      "expert_min": 20.0,
+      "junior_min": 480.0,
+      "agent_timeout_sec": 1200,
+      "tags": [
+        "security"
+      ]
+    },
+    {
+      "id": "build-cython-ext",
+      "difficulty": "medium",
+      "category": "debugging",
+      "expert_min": 60.0,
+      "junior_min": 180.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding",
+        "dependency",
+        "compilation"
+      ]
+    },
+    {
+      "id": "build-pmars",
+      "difficulty": "medium",
+      "category": "software-engineering",
+      "expert_min": 90.0,
+      "junior_min": 270.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "build-tools",
+        "compilation",
+        "debian",
+        "gaming",
+        "pmars",
+        "corewars"
+      ]
+    },
+    {
+      "id": "build-pov-ray",
+      "difficulty": "medium",
+      "category": "software-engineering",
+      "expert_min": 60.0,
+      "junior_min": 180.0,
+      "agent_timeout_sec": 12000,
+      "tags": [
+        "build-tools",
+        "compilation",
+        "graphics",
+        "ray-tracing",
+        "legacy-software",
+        "research"
+      ]
+    },
+    {
+      "id": "caffe-cifar-10",
+      "difficulty": "medium",
+      "category": "machine-learning",
+      "agent_timeout_sec": 1200,
+      "tags": [
+        "cnn",
+        "caffe"
+      ]
+    },
+    {
+      "id": "cancel-async-tasks",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 120.0,
+      "junior_min": 600.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "async",
+        "concurrency",
+        "python"
+      ]
+    },
+    {
+      "id": "chess-best-move",
+      "difficulty": "medium",
+      "category": "games",
+      "expert_min": 45.0,
+      "junior_min": 180.0,
+      "agent_timeout_sec": 900,
+      "tags": []
+    },
+    {
+      "id": "circuit-fibsqrt",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 960.0,
+      "junior_min": 2400.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "software-engineering"
+      ]
+    },
+    {
+      "id": "cobol-modernization",
+      "difficulty": "easy",
+      "category": "software-engineering",
+      "expert_min": 20.0,
+      "junior_min": 70.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "code-from-image",
+      "difficulty": "medium",
+      "category": "software-engineering",
+      "expert_min": 30.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 1200,
+      "tags": [
+        "ocr"
+      ]
+    },
+    {
+      "id": "compile-compcert",
+      "difficulty": "medium",
+      "category": "system-administration",
+      "expert_min": 60.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 2400,
+      "tags": [
+        "compilation",
+        "compilers"
+      ]
+    },
+    {
+      "id": "configure-git-webserver",
+      "difficulty": "hard",
+      "category": "system-administration",
+      "expert_min": 15.0,
+      "junior_min": 60.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "system",
+        "version-control",
+        "web"
+      ]
+    },
+    {
+      "id": "constraints-scheduling",
+      "difficulty": "medium",
+      "category": "personal-assistant",
+      "expert_min": 15.0,
+      "junior_min": 30.0,
+      "agent_timeout_sec": 1200,
+      "tags": [
+        "calendar",
+        "scheduling",
+        "constraint-satisfaction",
+        "ics-parsing",
+        "temporal-reasoning"
+      ]
+    },
+    {
+      "id": "count-dataset-tokens",
+      "difficulty": "medium",
+      "category": "model-training",
+      "expert_min": 30.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "machine-learning",
+        "data",
+        "datasets",
+        "tokenization",
+        "huggingface"
+      ]
+    },
+    {
+      "id": "crack-7z-hash",
+      "difficulty": "medium",
+      "category": "security",
+      "expert_min": 5.0,
+      "junior_min": 10.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "decrypt",
+        "security",
+        "file-operations"
+      ]
+    },
+    {
+      "id": "custom-memory-heap-crash",
+      "difficulty": "medium",
+      "category": "debugging",
+      "expert_min": 30.0,
+      "junior_min": 1200.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "cpp",
+        "memory-management",
+        "debugging"
+      ]
+    },
+    {
+      "id": "db-wal-recovery",
+      "difficulty": "medium",
+      "category": "file-operations",
+      "expert_min": 45.0,
+      "junior_min": 240.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "database",
+        "encryption",
+        "recovery"
+      ]
+    },
+    {
+      "id": "distribution-search",
+      "difficulty": "medium",
+      "category": "machine-learning",
+      "expert_min": 120.0,
+      "junior_min": 240.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "coding",
+        "statistics",
+        "machine-learning"
+      ]
+    },
+    {
+      "id": "dna-assembly",
+      "difficulty": "hard",
+      "category": "scientific-computing",
+      "expert_min": 60.0,
+      "junior_min": 180.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "biology",
+        "cloning"
+      ]
+    },
+    {
+      "id": "dna-insert",
+      "difficulty": "medium",
+      "category": "scientific-computing",
+      "expert_min": 30.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "biology",
+        "cloning"
+      ]
+    },
+    {
+      "id": "extract-elf",
+      "difficulty": "medium",
+      "category": "file-operations",
+      "expert_min": 30.0,
+      "junior_min": 240.0,
+      "agent_timeout_sec": 900,
+      "tags": []
+    },
+    {
+      "id": "extract-moves-from-video",
+      "difficulty": "hard",
+      "category": "file-operations",
+      "expert_min": 120.0,
+      "junior_min": 480.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "file-operations",
+        "web",
+        "video-processing"
+      ]
+    },
+    {
+      "id": "feal-differential-cryptanalysis",
+      "difficulty": "hard",
+      "category": "mathematics",
+      "expert_min": 480.0,
+      "junior_min": 19200.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "software-engineering"
+      ]
+    },
+    {
+      "id": "feal-linear-cryptanalysis",
+      "difficulty": "hard",
+      "category": "mathematics",
+      "expert_min": 960.0,
+      "junior_min": 19200.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "software-engineering"
+      ]
+    },
+    {
+      "id": "filter-js-from-html",
+      "difficulty": "medium",
+      "category": "security",
+      "expert_min": 45.0,
+      "junior_min": 480.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "security"
+      ]
+    },
+    {
+      "id": "financial-document-processor",
+      "difficulty": "medium",
+      "category": "data-processing",
+      "expert_min": 30.0,
+      "junior_min": 60.0,
+      "agent_timeout_sec": 1200,
+      "tags": [
+        "ocr",
+        "image-processing",
+        "financial",
+        "file-operations"
+      ]
+    },
+    {
+      "id": "fix-code-vulnerability",
+      "difficulty": "hard",
+      "category": "security",
+      "expert_min": 120.0,
+      "junior_min": 240.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "security",
+        "code-vulnerability",
+        "common-weakness-enumeration"
+      ]
+    },
+    {
+      "id": "fix-git",
+      "difficulty": "easy",
+      "category": "software-engineering",
+      "expert_min": 5.0,
+      "junior_min": 20.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding",
+        "version-control"
+      ]
+    },
+    {
+      "id": "fix-ocaml-gc",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 1440.0,
+      "junior_min": 14400.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "troubleshooting"
+      ]
+    },
+    {
+      "id": "gcode-to-text",
+      "difficulty": "medium",
+      "category": "file-operations",
+      "expert_min": 60.0,
+      "junior_min": 300.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "file-operations"
+      ]
+    },
+    {
+      "id": "git-leak-recovery",
+      "difficulty": "medium",
+      "category": "software-engineering",
+      "expert_min": 30.0,
+      "junior_min": 60.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "git",
+        "security"
+      ]
+    },
+    {
+      "id": "git-multibranch",
+      "difficulty": "medium",
+      "category": "system-administration",
+      "expert_min": 180.0,
+      "junior_min": 360.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "system",
+        "version-control",
+        "web"
+      ]
+    },
+    {
+      "id": "gpt2-codegolf",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 2400.0,
+      "junior_min": 9600.0,
+      "agent_timeout_sec": 900,
+      "tags": []
+    },
+    {
+      "id": "headless-terminal",
+      "difficulty": "medium",
+      "category": "software-engineering",
+      "expert_min": 120.0,
+      "junior_min": 240.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "bash",
+        "terminal"
+      ]
+    },
+    {
+      "id": "hf-model-inference",
+      "difficulty": "medium",
+      "category": "data-science",
+      "expert_min": 20.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "api",
+        "coding",
+        "data-processing",
+        "data-science"
+      ]
+    },
+    {
+      "id": "install-windows-3.11",
+      "difficulty": "hard",
+      "category": "system-administration",
+      "expert_min": 300.0,
+      "junior_min": 600.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "virtualization",
+        "qemu",
+        "windows-3.11",
+        "vnc",
+        "sys-admin",
+        "retro-computing"
+      ]
+    },
+    {
+      "id": "kv-store-grpc",
+      "difficulty": "medium",
+      "category": "software-engineering",
+      "expert_min": 15.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding",
+        "file-operations",
+        "system"
+      ]
+    },
+    {
+      "id": "large-scale-text-editing",
+      "difficulty": "medium",
+      "category": "file-operations",
+      "expert_min": 40.0,
+      "junior_min": 90.0,
+      "agent_timeout_sec": 1200,
+      "tags": [
+        "text-editing",
+        "large-scale-text-manipulation",
+        "vim",
+        "vim-macros"
+      ]
+    },
+    {
+      "id": "largest-eigenval",
+      "difficulty": "medium",
+      "category": "mathematics",
+      "expert_min": 60.0,
+      "junior_min": 180.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding",
+        "optimization",
+        "constraint",
+        "numerical-approximation"
+      ]
+    },
+    {
+      "id": "llm-inference-batching-scheduler",
+      "difficulty": "hard",
+      "category": "machine-learning",
+      "expert_min": 45.0,
+      "junior_min": 450.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "batching",
+        "inference",
+        "performance-optimization",
+        "scheduling"
+      ]
+    },
+    {
+      "id": "log-summary-date-ranges",
+      "difficulty": "medium",
+      "category": "data-processing",
+      "expert_min": 75.0,
+      "junior_min": 150.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "log-analysis",
+        "report-generation",
+        "data-processing"
+      ]
+    },
+    {
+      "id": "mailman",
+      "difficulty": "medium",
+      "category": "system-administration",
+      "expert_min": 60.0,
+      "junior_min": 180.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "email-server",
+        "mailing-list"
+      ]
+    },
+    {
+      "id": "make-doom-for-mips",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 480.0,
+      "junior_min": 1920.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "software-engineering"
+      ]
+    },
+    {
+      "id": "make-mips-interpreter",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 480.0,
+      "junior_min": 3600.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "software-engineering"
+      ]
+    },
+    {
+      "id": "mcmc-sampling-stan",
+      "difficulty": "hard",
+      "category": "data-science",
+      "expert_min": 180.0,
+      "junior_min": 2880.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "R",
+        "stan",
+        "bayesian-statistics",
+        "mcmc"
+      ]
+    },
+    {
+      "id": "merge-diff-arc-agi-task",
+      "difficulty": "medium",
+      "category": "debugging",
+      "expert_min": 20.0,
+      "junior_min": 40.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "git",
+        "coding"
+      ]
+    },
+    {
+      "id": "model-extraction-relu-logits",
+      "difficulty": "hard",
+      "category": "mathematics",
+      "expert_min": 480.0,
+      "junior_min": 2400.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "security"
+      ]
+    },
+    {
+      "id": "modernize-scientific-stack",
+      "difficulty": "medium",
+      "category": "scientific-computing",
+      "expert_min": 120.0,
+      "junior_min": 240.0,
+      "agent_timeout_sec": 600,
+      "tags": [
+        "python-migration",
+        "scientific-computing",
+        "legacy-modernization",
+        "climate-science",
+        "data-processing"
+      ]
+    },
+    {
+      "id": "mteb-leaderboard",
+      "difficulty": "medium",
+      "category": "data-science",
+      "expert_min": 5.0,
+      "junior_min": 10.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "retrieval",
+        "mteb"
+      ]
+    },
+    {
+      "id": "mteb-retrieve",
+      "difficulty": "medium",
+      "category": "data-science",
+      "expert_min": 15.0,
+      "junior_min": 45.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "data-processing",
+        "data-science",
+        "mteb"
+      ]
+    },
+    {
+      "id": "multi-source-data-merger",
+      "difficulty": "medium",
+      "category": "data-processing",
+      "expert_min": 30.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "data-processing",
+        "etl",
+        "schema-mapping",
+        "conflict-resolution",
+        "pandas",
+        "parquet"
+      ]
+    },
+    {
+      "id": "nginx-request-logging",
+      "difficulty": "medium",
+      "category": "system-administration",
+      "expert_min": 20.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "web-server"
+      ]
+    },
+    {
+      "id": "openssl-selfsigned-cert",
+      "difficulty": "medium",
+      "category": "security",
+      "expert_min": 20.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding",
+        "file-operations",
+        "security",
+        "system"
+      ]
+    },
+    {
+      "id": "overfull-hbox",
+      "difficulty": "easy",
+      "category": "debugging",
+      "expert_min": 60.0,
+      "junior_min": 60.0,
+      "agent_timeout_sec": 750,
+      "tags": [
+        "latex",
+        "document-processing",
+        "combinatorial-optimization"
+      ]
+    },
+    {
+      "id": "password-recovery",
+      "difficulty": "hard",
+      "category": "security",
+      "expert_min": 100.0,
+      "junior_min": 300.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "system",
+        "file-operations",
+        "troubleshooting"
+      ]
+    },
+    {
+      "id": "path-tracing",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 360.0,
+      "junior_min": 2400.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "images"
+      ]
+    },
+    {
+      "id": "path-tracing-reverse",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 120.0,
+      "junior_min": 1440.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "images"
+      ]
+    },
+    {
+      "id": "polyglot-c-py",
+      "difficulty": "medium",
+      "category": "software-engineering",
+      "expert_min": 20.0,
+      "junior_min": 480.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "polyglot-rust-c",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 180.0,
+      "junior_min": 720.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding",
+        "no-verified-solution"
+      ]
+    },
+    {
+      "id": "portfolio-optimization",
+      "difficulty": "medium",
+      "category": "optimization",
+      "expert_min": 120.0,
+      "junior_min": 480.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "c-programming",
+        "python-extension",
+        "optimization"
+      ]
+    },
+    {
+      "id": "protein-assembly",
+      "difficulty": "hard",
+      "category": "scientific-computing",
+      "expert_min": 60.0,
+      "junior_min": 300.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "biology",
+        "cloning",
+        "proteins"
+      ]
+    },
+    {
+      "id": "prove-plus-comm",
+      "difficulty": "easy",
+      "category": "software-engineering",
+      "expert_min": 5.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding"
+      ]
+    },
+    {
+      "id": "pypi-server",
+      "difficulty": "medium",
+      "category": "software-engineering",
+      "expert_min": 60.0,
+      "junior_min": 180.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding",
+        "system"
+      ]
+    },
+    {
+      "id": "pytorch-model-cli",
+      "difficulty": "medium",
+      "category": "model-training",
+      "expert_min": 30.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding",
+        "C",
+        "pytorch"
+      ]
+    },
+    {
+      "id": "pytorch-model-recovery",
+      "difficulty": "medium",
+      "category": "model-training",
+      "expert_min": 15.0,
+      "junior_min": 70.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding",
+        "pytorch",
+        "machine-learning"
+      ]
+    },
+    {
+      "id": "qemu-alpine-ssh",
+      "difficulty": "medium",
+      "category": "system-administration",
+      "expert_min": 30.0,
+      "junior_min": 480.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "sys-admin"
+      ]
+    },
+    {
+      "id": "qemu-startup",
+      "difficulty": "medium",
+      "category": "system-administration",
+      "expert_min": 30.0,
+      "junior_min": 480.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "sys-admin"
+      ]
+    },
+    {
+      "id": "query-optimize",
+      "difficulty": "medium",
+      "category": "data-science",
+      "expert_min": 60.0,
+      "junior_min": 480.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "query-optimization",
+        "sql-query"
+      ]
+    },
+    {
+      "id": "raman-fitting",
+      "difficulty": "medium",
+      "category": "scientific-computing",
+      "expert_min": 5.0,
+      "junior_min": 30.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding",
+        "fitting",
+        "analysis",
+        "physics"
+      ]
+    },
+    {
+      "id": "regex-chess",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 1440.0,
+      "junior_min": 4800.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "software-engineering"
+      ]
+    },
+    {
+      "id": "regex-log",
+      "difficulty": "medium",
+      "category": "data-processing",
+      "expert_min": 45.0,
+      "junior_min": 180.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "regex",
+        "string-parsing",
+        "log-analysis"
+      ]
+    },
+    {
+      "id": "reshard-c4-data",
+      "difficulty": "medium",
+      "category": "data-science",
+      "expert_min": 30.0,
+      "junior_min": 60.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "coding",
+        "data-processing",
+        "file-operations"
+      ]
+    },
+    {
+      "id": "rstan-to-pystan",
+      "difficulty": "medium",
+      "category": "data-science",
+      "expert_min": 180.0,
+      "junior_min": 2880.0,
+      "agent_timeout_sec": 1800,
+      "tags": [
+        "pystan",
+        "rstan",
+        "gaussian-process"
+      ]
+    },
+    {
+      "id": "sam-cell-seg",
+      "difficulty": "hard",
+      "category": "data-science",
+      "expert_min": 600.0,
+      "junior_min": 1200.0,
+      "agent_timeout_sec": 7200,
+      "tags": [
+        "image-processing",
+        "machine-learning",
+        "histopathology"
+      ]
+    },
+    {
+      "id": "sanitize-git-repo",
+      "difficulty": "medium",
+      "category": "security",
+      "expert_min": 30.0,
+      "junior_min": 60.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "security",
+        "system",
+        "version-control"
+      ]
+    },
+    {
+      "id": "schemelike-metacircular-eval",
+      "difficulty": "medium",
+      "category": "software-engineering",
+      "expert_min": 300.0,
+      "junior_min": 2440.0,
+      "agent_timeout_sec": 2400,
+      "tags": [
+        "software-engineering"
+      ]
+    },
+    {
+      "id": "sparql-university",
+      "difficulty": "hard",
+      "category": "data-querying",
+      "expert_min": 800.0,
+      "junior_min": 10000.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "knowledge-graph",
+        "sparql-query",
+        "information-retrieval"
+      ]
+    },
+    {
+      "id": "sqlite-db-truncate",
+      "difficulty": "medium",
+      "category": "debugging",
+      "expert_min": 60.0,
+      "junior_min": 240.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "file-operations"
+      ]
+    },
+    {
+      "id": "sqlite-with-gcov",
+      "difficulty": "medium",
+      "category": "system-administration",
+      "expert_min": 30.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "software-installation",
+        "system"
+      ]
+    },
+    {
+      "id": "torch-pipeline-parallelism",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 240.0,
+      "junior_min": 1200.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "system"
+      ]
+    },
+    {
+      "id": "torch-tensor-parallelism",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 240.0,
+      "junior_min": 1200.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "system"
+      ]
+    },
+    {
+      "id": "train-fasttext",
+      "difficulty": "hard",
+      "category": "model-training",
+      "expert_min": 30.0,
+      "junior_min": 90.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "data-processing",
+        "data-science"
+      ]
+    },
+    {
+      "id": "tune-mjcf",
+      "difficulty": "medium",
+      "category": "scientific-computing",
+      "expert_min": 30.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "mujoco",
+        "physics",
+        "simulation",
+        "numerical-optimization"
+      ]
+    },
+    {
+      "id": "video-processing",
+      "difficulty": "hard",
+      "category": "video-processing",
+      "expert_min": 400.0,
+      "junior_min": 1000.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "video-processing"
+      ]
+    },
+    {
+      "id": "vulnerable-secret",
+      "difficulty": "medium",
+      "category": "security",
+      "expert_min": 20.0,
+      "junior_min": 120.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "security",
+        "file-operations"
+      ]
+    },
+    {
+      "id": "winning-avg-corewars",
+      "difficulty": "medium",
+      "category": "software-engineering",
+      "expert_min": 60.0,
+      "junior_min": 240.0,
+      "agent_timeout_sec": 3600,
+      "tags": [
+        "pmars",
+        "corewars",
+        "gaming"
+      ]
+    },
+    {
+      "id": "write-compressor",
+      "difficulty": "hard",
+      "category": "software-engineering",
+      "expert_min": 1440.0,
+      "junior_min": 4800.0,
+      "agent_timeout_sec": 900,
+      "tags": [
+        "coding"
+      ]
+    }
+  ]
+}

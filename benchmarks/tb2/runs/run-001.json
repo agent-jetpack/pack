@@ -1,0 +1,359 @@
+{
+  "run_id": "run-001",
+  "date": "2026-04-18",
+  "model": "z-ai/glm-5.1",
+  "provider": "openrouter/DeepInfra",
+  "harness_version": "post-cwd-fix",
+  "notes": "First full benchmark run after CWD fix + agent-first architecture engine. Pre timeout/max_tokens fixes.",
+  "tasks_attempted": 56,
+  "tasks_passed": 34,
+  "tasks_failed": 17,
+  "tasks_errored": 5,
+  "pass_rate": 0.667,
+  "total_prompt_tokens": 26927637,
+  "total_completion_tokens": 803328,
+  "total_cost_usd": 28.11,
+  "results": {
+    "adaptive-rejection-sampler": {
+      "result": "fail",
+      "steps": 2,
+      "prompt_tokens": 10962,
+      "completion_tokens": 65536
+    },
+    "bn-fit-modify": {
+      "result": "pass",
+      "steps": 23,
+      "prompt_tokens": 407203,
+      "completion_tokens": 8948
+    },
+    "break-filter-js-from-html": {
+      "result": "pass",
+      "steps": 14,
+      "prompt_tokens": 300547,
+      "completion_tokens": 13710
+    },
+    "build-cython-ext": {
+      "result": "pass",
+      "steps": 63,
+      "prompt_tokens": 2191314,
+      "completion_tokens": 9131
+    },
+    "cancel-async-tasks": {
+      "result": "pass",
+      "steps": 5,
+      "prompt_tokens": 45277,
+      "completion_tokens": 1122
+    },
+    "chess-best-move": {
+      "result": "error",
+      "error_type": "ValidationError",
+      "steps": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "code-from-image": {
+      "result": "error",
+      "error_type": "ValidationError",
+      "steps": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "compile-compcert": {
+      "result": "fail",
+      "steps": 1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "constraints-scheduling": {
+      "result": "pass",
+      "steps": 5,
+      "prompt_tokens": 58838,
+      "completion_tokens": 4049
+    },
+    "count-dataset-tokens": {
+      "result": "pass",
+      "steps": 12,
+      "prompt_tokens": 320866,
+      "completion_tokens": 2403
+    },
+    "crack-7z-hash": {
+      "result": "pass",
+      "steps": 22,
+      "prompt_tokens": 560657,
+      "completion_tokens": 2109
+    },
+    "custom-memory-heap-crash": {
+      "result": "pass",
+      "steps": 22,
+      "prompt_tokens": 437941,
+      "completion_tokens": 10530
+    },
+    "db-wal-recovery": {
+      "result": "fail",
+      "steps": 1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "dna-assembly": {
+      "result": "fail",
+      "steps": 31,
+      "prompt_tokens": 1799408,
+      "completion_tokens": 169294
+    },
+    "extract-elf": {
+      "result": "pass",
+      "steps": 13,
+      "prompt_tokens": 286024,
+      "completion_tokens": 12829
+    },
+    "extract-moves-from-video": {
+      "result": "error",
+      "error_type": "ValidationError",
+      "steps": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "feal-differential-cryptanalysis": {
+      "result": "pass",
+      "steps": 9,
+      "prompt_tokens": 303852,
+      "completion_tokens": 36049
+    },
+    "fix-code-vulnerability": {
+      "result": "pass",
+      "steps": 30,
+      "prompt_tokens": 640163,
+      "completion_tokens": 3284
+    },
+    "gcode-to-text": {
+      "result": "fail",
+      "steps": 1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "git-multibranch": {
+      "result": "pass",
+      "steps": 36,
+      "prompt_tokens": 580476,
+      "completion_tokens": 3063
+    },
+    "hf-model-inference": {
+      "result": "pass",
+      "steps": 14,
+      "prompt_tokens": 161577,
+      "completion_tokens": 2426
+    },
+    "install-windows-3.11": {
+      "result": "error",
+      "error_type": "ValueError",
+      "steps": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "kv-store-grpc": {
+      "result": "pass",
+      "steps": 15,
+      "prompt_tokens": 191371,
+      "completion_tokens": 2096
+    },
+    "large-scale-text-editing": {
+      "result": "pass",
+      "steps": 14,
+      "prompt_tokens": 293554,
+      "completion_tokens": 13104
+    },
+    "llm-inference-batching-scheduler": {
+      "result": "pass",
+      "steps": 1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "log-summary-date-ranges": {
+      "result": "pass",
+      "steps": 5,
+      "prompt_tokens": 51293,
+      "completion_tokens": 1411
+    },
+    "mailman": {
+      "result": "pass",
+      "steps": 48,
+      "prompt_tokens": 1306886,
+      "completion_tokens": 7252
+    },
+    "make-mips-interpreter": {
+      "result": "fail",
+      "steps": 1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "merge-diff-arc-agi-task": {
+      "result": "pass",
+      "steps": 24,
+      "prompt_tokens": 546702,
+      "completion_tokens": 4913
+    },
+    "model-extraction-relu-logits": {
+      "result": "fail",
+      "steps": 1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "modernize-scientific-stack": {
+      "result": "pass",
+      "steps": 6,
+      "prompt_tokens": 63806,
+      "completion_tokens": 1349
+    },
+    "multi-source-data-merger": {
+      "result": "pass",
+      "steps": 11,
+      "prompt_tokens": 127904,
+      "completion_tokens": 3117
+    },
+    "nginx-request-logging": {
+      "result": "pass",
+      "steps": 21,
+      "prompt_tokens": 266449,
+      "completion_tokens": 2286
+    },
+    "openssl-selfsigned-cert": {
+      "result": "fail",
+      "steps": 22,
+      "prompt_tokens": 275415,
+      "completion_tokens": 3177
+    },
+    "path-tracing": {
+      "result": "pass",
+      "steps": 41,
+      "prompt_tokens": 2146683,
+      "completion_tokens": 30287
+    },
+    "path-tracing-reverse": {
+      "result": "fail",
+      "steps": 1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "polyglot-c-py": {
+      "result": "fail",
+      "steps": 23,
+      "prompt_tokens": 380513,
+      "completion_tokens": 13248
+    },
+    "portfolio-optimization": {
+      "result": "pass",
+      "steps": 13,
+      "prompt_tokens": 188880,
+      "completion_tokens": 3360
+    },
+    "protein-assembly": {
+      "result": "fail",
+      "steps": 1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "pypi-server": {
+      "result": "pass",
+      "steps": 15,
+      "prompt_tokens": 178386,
+      "completion_tokens": 1412
+    },
+    "pytorch-model-cli": {
+      "result": "pass",
+      "steps": 34,
+      "prompt_tokens": 600627,
+      "completion_tokens": 7178
+    },
+    "pytorch-model-recovery": {
+      "result": "pass",
+      "steps": 21,
+      "prompt_tokens": 435115,
+      "completion_tokens": 13615
+    },
+    "qemu-alpine-ssh": {
+      "result": "fail",
+      "steps": 1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "regex-chess": {
+      "result": "fail",
+      "steps": 2,
+      "prompt_tokens": 10939,
+      "completion_tokens": 65536
+    },
+    "regex-log": {
+      "result": "pass",
+      "steps": 20,
+      "prompt_tokens": 716878,
+      "completion_tokens": 31114
+    },
+    "reshard-c4-data": {
+      "result": "pass",
+      "steps": 37,
+      "prompt_tokens": 2247092,
+      "completion_tokens": 13740
+    },
+    "rstan-to-pystan": {
+      "result": "pass",
+      "steps": 47,
+      "prompt_tokens": 1060202,
+      "completion_tokens": 7927
+    },
+    "schemelike-metacircular-eval": {
+      "result": "fail",
+      "steps": 9,
+      "prompt_tokens": 130271,
+      "completion_tokens": 65926
+    },
+    "sparql-university": {
+      "result": "pass",
+      "steps": 16,
+      "prompt_tokens": 303525,
+      "completion_tokens": 9933
+    },
+    "sqlite-db-truncate": {
+      "result": "pass",
+      "steps": 7,
+      "prompt_tokens": 74249,
+      "completion_tokens": 2490
+    },
+    "sqlite-with-gcov": {
+      "result": "fail",
+      "steps": 19,
+      "prompt_tokens": 240065,
+      "completion_tokens": 1836
+    },
+    "train-fasttext": {
+      "result": "fail",
+      "steps": 1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "tune-mjcf": {
+      "result": "fail",
+      "steps": 1,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "video-processing": {
+      "result": "error",
+      "error_type": "ValidationError",
+      "steps": 0,
+      "prompt_tokens": 0,
+      "completion_tokens": 0
+    },
+    "vulnerable-secret": {
+      "result": "pass",
+      "steps": 11,
+      "prompt_tokens": 194431,
+      "completion_tokens": 4296
+    },
+    "winning-avg-corewars": {
+      "result": "pass",
+      "steps": 78,
+      "prompt_tokens": 6791296,
+      "completion_tokens": 148242
+    }
+  }
+}
