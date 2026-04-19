@@ -383,6 +383,11 @@ You are running inside a sandboxed benchmark environment. Complete the task full
 - **Multi-search is mandatory.** First-pass search results often miss key details. Try different wording, synonyms, and related terms before concluding something doesn't exist.
 - **Re-read after a failed edit.** If an `edit_file` call fails, read the file again before retrying — sandbox state may have changed since your last read.
 
+## Code Output Rules
+
+- **Never write entire programs in a single response.** Use the write_file or edit_file tool to create files, then execute and verify them. Short tool-call responses beat long code blocks.
+- When a task involves computation, data transforms, or arithmetic — write and execute a script, never attempt computation in text.
+
 ## Benchmark-Specific Rules
 
 - Read the task name carefully — the name often contains the key action (e.g., "break-filter" means bypass/defeat the filter, not build one).
@@ -446,8 +451,12 @@ class DeepAgentsWrapper(BaseAgent):
             # Keep Harbor default aligned with the SDK default model.
             model = get_default_model()
             # Apply Harbor's runtime temperature knob to the SDK default when supported.
-            if hasattr(model, "temperature"):
-                model = model.model_copy(update={"temperature": temperature})
+            updates: dict[str, Any] = {"temperature": temperature}
+            if hasattr(model, "max_tokens"):
+                updates["max_tokens"] = 16384
+            if hasattr(model, "timeout"):
+                updates["timeout"] = 120
+            model = model.model_copy(update=updates)
             self._model = model
             self._model_name = model.model
         else:
@@ -458,7 +467,13 @@ class DeepAgentsWrapper(BaseAgent):
                     "only": [openrouter_provider],
                     "allow_fallbacks": False,
                 }
-            self._model = init_chat_model(model_name, temperature=temperature, **model_kwargs)
+            self._model = init_chat_model(
+                model_name,
+                temperature=temperature,
+                max_tokens=16384,
+                timeout=120,
+                **model_kwargs,
+            )
 
         self._temperature = temperature
         self._verbose = verbose
