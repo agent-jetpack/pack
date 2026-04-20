@@ -359,6 +359,40 @@ _MAX_FILE_LISTING = 10  # maximum files shown in the system prompt directory con
 _OPENROUTER_TIMEOUT_SEC = 300  # per-request timeout for the OpenRouter httpx client
 
 
+def _read_task_toml_metadata(task_path: str) -> dict[str, Any]:
+    """Extract difficulty, category, and agent timeout from a TB2 task.toml.
+
+    Returns an empty dict if the file cannot be read or parsed.  Used to
+    enrich LangSmith run metadata for downstream filtering and analysis.
+    """
+    import os as _os
+
+    out: dict[str, Any] = {}
+    toml_path = _os.path.join(task_path, "task.toml")
+    if not task_path or not _os.path.exists(toml_path):
+        return out
+    try:
+        in_agent = False
+        for raw in open(toml_path, encoding="utf-8"):
+            line = raw.strip()
+            if line.startswith("difficulty"):
+                out["difficulty"] = line.split('"')[1] if '"' in line else ""
+            elif line.startswith("category"):
+                out["category"] = line.split('"')[1] if '"' in line else ""
+            elif line == "[agent]":
+                in_agent = True
+            elif line.startswith("[") and in_agent:
+                in_agent = False
+            elif in_agent and line.startswith("timeout"):
+                try:
+                    out["agent_timeout"] = int(float(line.split("=")[1].strip()))
+                except Exception:
+                    pass
+    except Exception:
+        logger.debug("Could not parse task.toml at %s", toml_path, exc_info=True)
+    return out
+
+
 def _patch_openrouter_timeout(model: Any) -> None:
     """Replace the OpenRouter SDK client with one that has a proper timeout.
 
@@ -655,6 +689,12 @@ class DeepAgentsWrapper(BaseAgent):
         except importlib.metadata.PackageNotFoundError:
             sdk_version = "unknown"
 
+        # Extract task name and metadata from trial config for queryable traces
+        task_path = configuration.get("task", {}).get("path", "")
+        task_name = task_path.rsplit("/", 1)[-1] if task_path else "unknown"
+        task_toml_meta = _read_task_toml_metadata(task_path)
+        trial_name = configuration.get("trial_name", environment.session_id)
+
         metadata = {
             "task_instruction": instruction,
             # "model" is the legacy key; "model_name" is the canonical key
@@ -667,18 +707,30 @@ class DeepAgentsWrapper(BaseAgent):
             "harbor_session_id": environment.session_id,
             # Tag to indicate which agent implementation is being used
             "agent_mode": "cli" if self._use_cli_agent else "sdk",
+            # Task-level metadata for filterable trace analysis
+            "task_name": task_name,
+            "task_difficulty": task_toml_meta.get("difficulty", "unknown"),
+            "task_category": task_toml_meta.get("category", "unknown"),
+            "task_timeout_sec": task_toml_meta.get("agent_timeout", 0),
+            "trial_name": trial_name,
         }
         metadata.update(configuration)
 
         # Look up example_id from instruction using the mapping built at initialization
         example_id = self._instruction_to_example_id.get(instruction)
 
+        # Build human-readable run name: "task-name (difficulty)" for easy scanning
+        difficulty = metadata.get("task_difficulty", "unknown")
+        run_name = f"{task_name} ({difficulty})"
+
         config: RunnableConfig = {
-            "run_name": f"{environment.session_id}",
+            "run_name": run_name,
             "tags": [
-                self._model_name,
-                environment.session_id,
-                "cli-agent" if self._use_cli_agent else "sdk-agent",
+                f"model:{self._model_name}",
+                f"task:{task_name}",
+                f"difficulty:{difficulty}",
+                f"category:{metadata.get('task_category', 'unknown')}",
+                f"agent:{'cli' if self._use_cli_agent else 'sdk'}",
             ],
             "configurable": {
                 "thread_id": str(uuid.uuid4()),
@@ -700,7 +752,7 @@ class DeepAgentsWrapper(BaseAgent):
         try:
             if langsmith_experiment_name:
                 with trace(
-                    name=environment.session_id,
+                    name=run_name,
                     reference_example_id=example_id,
                     inputs={"instruction": instruction},
                     project_name=langsmith_experiment_name,
