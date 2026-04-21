@@ -102,7 +102,7 @@ override-dependencies = [
 ]
 
 [tool.uv.sources]
-deepagents-cli = { path = "../cli" }
+deepagents-cli = { path = "../cli", editable = true }
 deepagents = { path = "../deepagents", editable = true }
 
 [tool.ty.environment]
