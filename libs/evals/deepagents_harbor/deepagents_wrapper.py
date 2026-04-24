@@ -700,8 +700,21 @@ class DeepAgentsWrapper(BaseAgent):
             # Classify the task so the prompt builder can surface domain/phase
             # guidance without bloating the static portion for unrelated tasks.
             from deepagents.prompt import classify
+            from deepagents_cli.policy import policy_for
 
             task_hints = classify(instruction).as_dict()
+            # Phase A of the agent-harness roadmap: the classifier's
+            # output feeds a task policy that downstream middleware
+            # (scope enforcement, required checks, reviewer gating)
+            # consults. For TB2 this is advisory since the sandbox
+            # gives broad write access anyway; for real user repos the
+            # policy caps blast radius.
+            task_policy = policy_for(task_hints)
+            # Ratchet persistence to live .harness/ per trial is deferred
+            # — needs a decision about per-trial vs repo-level scope
+            # tracking. Phase A.3 shipped the substrate and integration
+            # contract; runtime wire-up follows once usage patterns
+            # clarify.
 
             # Explicit env override: the controller process (where we are)
             # lives on the host filesystem, but the agent runs inside a
@@ -739,6 +752,7 @@ class DeepAgentsWrapper(BaseAgent):
                 task_hints=task_hints,
                 prompt_env_override=prompt_env_override,
                 budget_total_sec=budget_total_sec,
+                task_policy=task_policy,
             )
         else:
             # Use SDK agent

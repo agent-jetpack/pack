@@ -52,7 +52,9 @@ from deepagents_cli.configurable_model import ConfigurableModelMiddleware
 from deepagents_cli.integrations.sandbox_factory import get_default_working_dir
 from deepagents_cli.budget_observable import BudgetObservableMiddleware
 from deepagents_cli.output_ceiling import OutputCeilingMiddleware
+from deepagents_cli.policy import TaskPolicy
 from deepagents_cli.progressive_disclosure import ProgressiveDisclosureMiddleware
+from deepagents_cli.scope_enforcement import ScopeEnforcementMiddleware
 from deepagents_cli.tool_result_enrichment import ToolResultEnrichmentMiddleware
 from deepagents_cli.loop_detection import LoopDetectionMiddleware
 from deepagents_cli.local_context import (
@@ -1460,6 +1462,7 @@ def create_cli_agent(
     task_hints: dict[str, str] | None = None,
     prompt_env_override: dict[str, str | None] | None = None,
     budget_total_sec: int | None = None,
+    task_policy: TaskPolicy | None = None,
 ) -> tuple[Pregel, CompositeBackend]:
     """Create a CLI-configured agent with flexible options.
 
@@ -1746,6 +1749,15 @@ def create_cli_agent(
     if restrictive_shell_allow_list is not None:
         agent_middleware.append(ShellAllowListMiddleware(restrictive_shell_allow_list))
         shell_middleware_added = True
+
+    # Scope enforcement (Phase A harness layer): when a TaskPolicy is
+    # supplied, gate file writes against its allowed_paths globs + the
+    # max_files_changed cap. No-ops when task_policy is None, preserving
+    # existing behaviour for callers that haven't opted into the harness.
+    if task_policy is not None:
+        agent_middleware.append(
+            ScopeEnforcementMiddleware(policy=task_policy),
+        )
 
     # Always-on tool result middleware
     agent_middleware.append(EditVerificationMiddleware())
