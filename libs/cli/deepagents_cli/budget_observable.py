@@ -51,7 +51,10 @@ class BudgetObservableMiddleware(AgentMiddleware):
             interactive CLI mode where budget is not meaningful.
     """
 
-    DEFAULT_TOTAL_BUDGET_SEC = 900  # 15 minutes — common Harbor task timeout
+    # 30 minutes: Harbor tasks commonly have 1200-1800s agent_timeout; a
+    # conservative default avoids false CRITICAL markers when the task's
+    # real timeout exceeds 15 min. Harbor callers should override.
+    DEFAULT_TOTAL_BUDGET_SEC = 1800
     DEFAULT_CRITICAL_THRESHOLD_SEC = 120  # 2 minutes
 
     def __init__(
@@ -70,7 +73,10 @@ class BudgetObservableMiddleware(AgentMiddleware):
         self.total_budget_sec = total_budget_sec
         self.critical_threshold_sec = critical_threshold_sec
         self.disabled = disabled
-        self._started_at = time.monotonic()
+        # Lazy-initialized on first tool call so container setup and agent
+        # graph construction time don't eat the budget. Set to None here,
+        # assigned on the first _append_budget invocation.
+        self._started_at: float | None = None
 
     def wrap_tool_call(
         self,
@@ -96,6 +102,12 @@ class BudgetObservableMiddleware(AgentMiddleware):
     ) -> ToolMessage | Command[Any]:
         if self.disabled or not isinstance(result, ToolMessage):
             return result
+
+        # Lazy init: the clock starts on the first real tool call, not
+        # at middleware construction. This keeps container setup and
+        # agent graph assembly out of the wall-clock budget.
+        if self._started_at is None:
+            self._started_at = time.monotonic()
 
         elapsed = time.monotonic() - self._started_at
         remaining = max(0, self.total_budget_sec - elapsed)

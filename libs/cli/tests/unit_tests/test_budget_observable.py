@@ -134,3 +134,38 @@ def test_critical_threshold_transition_is_consistent() -> None:
     m._started_at = time.monotonic() - 780  # exactly 120 remaining
     result = m._append_budget(_tool_message("x"))
     assert "CRITICAL" in str(result.content)
+
+
+# ---------------------------------------------------------------------------
+# Lazy start — the clock ticks from first tool call, not __init__
+# ---------------------------------------------------------------------------
+
+
+def test_started_at_is_lazy() -> None:
+    m = BudgetObservableMiddleware(total_budget_sec=900)
+    # Construction must not set the clock.
+    assert m._started_at is None
+
+
+def test_first_call_starts_the_clock() -> None:
+    m = BudgetObservableMiddleware(total_budget_sec=900)
+    t0 = time.monotonic()
+    m._append_budget(_tool_message("first"))
+    assert m._started_at is not None
+    # Within reasonable skew
+    assert t0 - 0.1 <= m._started_at <= t0 + 0.1
+
+
+def test_lazy_init_reports_full_budget_on_first_call() -> None:
+    # Default budget is 30 min; on the very first tool call we should see
+    # essentially the full budget remaining (within a few seconds of skew).
+    m = BudgetObservableMiddleware(total_budget_sec=1800, critical_threshold_sec=120)
+    result = m._append_budget(_tool_message("x"))
+    text = str(result.content)
+    assert "CRITICAL" not in text
+    assert "29m" in text or "30m" in text  # allow ~2s of setup skew
+
+
+def test_default_budget_is_30_minutes() -> None:
+    m = BudgetObservableMiddleware()
+    assert m.total_budget_sec == 1800
