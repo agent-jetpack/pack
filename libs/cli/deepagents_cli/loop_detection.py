@@ -14,6 +14,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from deepagents_cli._tool_names import WRITE_TOOLS
 from langchain.agents.middleware.types import (
     AgentMiddleware,
     AgentState,
@@ -48,8 +49,11 @@ Stop and ask the user what to do — describe what you've tried and what's
 not working so they can help you course-correct.
 """
 
-# Tool names we track
-_EDIT_TOOL_NAMES = frozenset({"edit_file", "write_file"})
+# Tool names we track. Loop detection cares about any tool that
+# *writes* to a path; the underlying set is the canonical
+# ``WRITE_TOOLS`` from ``_tool_names``. Aliased so existing
+# references in this module keep working.
+_EDIT_TOOL_NAMES = WRITE_TOOLS
 
 
 # ---------------------------------------------------------------------------

@@ -114,6 +114,8 @@ def show_help() -> None:
         "  --no-stream                Buffer full response instead of streaming"
     )
     console.print("  --stdin                    Read input from stdin explicitly")
+    console.print("  --verify-cmd CMD           Verification command to run after non-interactive task")
+    console.print("  --verify-retries N         Max verification retry rounds (default: 3)")
     console.print(
         "  --json                     Emit machine-readable JSON for commands"
     )

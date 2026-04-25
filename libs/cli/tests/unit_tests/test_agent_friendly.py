@@ -569,29 +569,7 @@ class TestHelpScreenDriftExtended:
             show_help()
         assert "--stdin" in buf.getvalue()
 
-    def test_all_parser_flags_appear_in_help(self) -> None:
-        """Every top-level --flag in argparse must appear in show_help()."""
-        stderr_buf = io.StringIO()
-        with (
-            patch.object(sys, "argv", ["deepagents", "--_x_"]),
-            patch("sys.stderr", stderr_buf),
-            pytest.raises(SystemExit),
-        ):
-            parse_args()
-        usage_text = stderr_buf.getvalue()
-
-        help_buf = io.StringIO()
-        test_console = Console(file=help_buf, highlight=False, width=200)
-        with patch("deepagents_cli.ui.console", test_console):
-            show_help()
-        help_text = help_buf.getvalue()
-
-        parser_flags = set(re.findall(r"--[\w][\w-]*", usage_text))
-        help_flags = set(re.findall(r"--[\w][\w-]*", help_text))
-        parser_flags.discard("--_x_")
-
-        missing = parser_flags - help_flags
-        assert not missing, (
-            f"Flags in argparse but missing from show_help(): {missing}\n"
-            "Add them to the Options section in ui.show_help()."
-        )
+    # NOTE: ``test_all_parser_flags_appear_in_help`` was duplicated here
+    # and in ``test_args.py``. The canonical copy lives in
+    # ``test_args.py::TestParserHelpDrift``; deleted from this file in
+    # the cleanup pass following the second external review.

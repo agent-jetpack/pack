@@ -23,6 +23,8 @@ from typing import TYPE_CHECKING, Any
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.messages import ToolMessage
 
+from deepagents_cli._tool_names import WRITE_TOOLS, extract_file_path
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
@@ -34,25 +36,19 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-# Tool names that write to the filesystem. Keep this narrow — the
-# middleware intentionally doesn't gate `execute` (shell) because a
-# shell-level scope check requires a shell-allow-list, which is a
-# separate middleware's job.
-_WRITE_TOOL_NAMES = frozenset({"write_file", "edit_file"})
+# Tool names that write to the filesystem are sourced from the
+# canonical ``_tool_names`` module. We don't gate ``execute`` here —
+# shell-level scope is a separate middleware's job.
+_WRITE_TOOL_NAMES = WRITE_TOOLS
 
 
 def _path_from_args(tool_call: dict[str, Any]) -> str | None:
     """Extract the target file path from a write-tool call.
 
-    Both ``write_file`` and ``edit_file`` in deepagents accept either
-    ``path`` or ``file_path`` depending on version. We check both so the
-    middleware survives schema drift.
+    Thin wrapper over the canonical helper, kept so internal tests
+    that import ``_path_from_args`` keep working without churn.
     """
-    args = tool_call.get("args") or {}
-    path = args.get("path") or args.get("file_path")
-    if isinstance(path, str) and path.strip():
-        return path
-    return None
+    return extract_file_path(tool_call)
 
 
 def _matches_any(path: str, patterns: tuple[str, ...]) -> bool:

@@ -1,9 +1,11 @@
 """Trace analyzer — categorize a failed trial into a promotable lesson.
 
-Phase E.1 of the agent-harness roadmap. Takes a Harbor trial directory
-(or equivalent inputs) plus an optional ``ReviewVerdict`` and produces
-a ``TraceInsight`` naming the category of failure and what durable
-artifact should capture it.
+Phase E.1 of the agent-harness roadmap. Takes a trial directory
+produced by an agent run (Harbor uses this shape; any caller can
+emit equivalent ``result.json`` + ``agent/trajectory.json`` files)
+plus an optional ``ReviewVerdict`` and produces a ``TraceInsight``
+naming the category of failure and what durable artifact should
+capture it.
 
 Categories (frozen at this phase):
 
@@ -123,7 +125,15 @@ class TraceInsight:
 
 
 def extract_signals(trial_dir: str | Path) -> TrialSignals:
-    """Read a Harbor trial directory and produce normalized signals.
+    """Read a trial directory and produce normalized signals.
+
+    Expects the on-disk shape:
+
+    ::
+
+        <trial_dir>/
+            result.json              # verifier_result + exception_info
+            agent/trajectory.json    # steps + final_metrics
 
     Tolerates missing or malformed files — anything we can't read
     contributes a zero/False default rather than raising, so the

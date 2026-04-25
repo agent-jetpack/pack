@@ -4,9 +4,10 @@ Appends a ``[budget: 7m 32s remaining | tokens ...]`` line to each tool result.
 At ``critical_threshold_sec`` remaining (default 120s), escalates to a
 ``[CRITICAL]`` marker urging the agent to emit its best-known solution.
 
-No hard cutoff — the outer Harbor timeout still governs abort. This middleware
-only exposes budget so the agent can reason about it rather than running the
-clock to zero blindly.
+No hard cutoff — the host (sandbox / benchmark harness / wall-clock
+limit) still governs abort. This middleware only exposes budget so
+the agent can reason about it rather than running the clock to zero
+blindly.
 
 Wired via ``agent.py:create_cli_agent()``.
 """
@@ -51,9 +52,9 @@ class BudgetObservableMiddleware(AgentMiddleware):
             interactive CLI mode where budget is not meaningful.
     """
 
-    # 30 minutes: Harbor tasks commonly have 1200-1800s agent_timeout; a
-    # conservative default avoids false CRITICAL markers when the task's
-    # real timeout exceeds 15 min. Harbor callers should override.
+    # 30 minutes: a conservative ceiling that fits most agent runs.
+    # Callers (CLI, benchmark adapters, server processes) should
+    # override with the host's actual wall-clock limit when known.
     DEFAULT_TOTAL_BUDGET_SEC = 1800
     DEFAULT_CRITICAL_THRESHOLD_SEC = 120  # 2 minutes
 

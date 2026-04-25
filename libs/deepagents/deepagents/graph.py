@@ -301,9 +301,11 @@ def _build_pack_system_prompt(
 
     Args:
         prompt_env_override: When provided (even as empty dict), disables
-            auto-collection of cwd/os/branch/git_status and uses the given
-            values instead. Harbor passes ``{}`` here so the controller
-            process state doesn't leak into the container agent's prompt.
+            auto-collection of cwd/os/branch/git_status and uses the
+            given values instead. Use this when the calling process and
+            the agent's runtime see different filesystems (sandboxed
+            execution, container agents, remote workers) so the
+            caller's environment doesn't leak into the agent's prompt.
     """
     from deepagents.prompt.builder import SystemPromptBuilder
     from deepagents.prompt.context_pack import ContextPack

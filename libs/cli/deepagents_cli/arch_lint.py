@@ -39,6 +39,8 @@ from typing import TYPE_CHECKING, Any
 from langchain.agents.middleware.types import AgentMiddleware
 from langchain_core.messages import ToolMessage
 
+from deepagents_cli._tool_names import WRITE_TOOLS
+
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable
 
@@ -382,7 +384,7 @@ def check_file(
 # --- Middleware ---------------------------------------------------------
 
 
-_WRITE_TOOL_NAMES = frozenset({"write_file", "edit_file"})
+_WRITE_TOOL_NAMES = WRITE_TOOLS
 
 
 class ArchLintMiddleware(AgentMiddleware):

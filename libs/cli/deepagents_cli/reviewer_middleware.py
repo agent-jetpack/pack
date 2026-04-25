@@ -36,6 +36,7 @@ from langchain.agents.middleware.types import (
 )
 from langchain_core.messages import AIMessage, HumanMessage
 
+from deepagents_cli._tool_names import WRITE_TOOLS
 from deepagents_cli.reviewer import ReviewerSubAgent
 
 if TYPE_CHECKING:
@@ -76,9 +77,9 @@ def _extract_task_instruction(messages: list[Any]) -> str:
     """Pull the original task instruction from the conversation.
 
     The first ``HumanMessage`` with substantive content is the task by
-    convention. If that's missing (shouldn't happen in Harbor runs but
-    possible in tests), returns an empty string so the reviewer can
-    still do its best without the prefix context.
+    convention. If that's missing (rare — happens when the agent is
+    invoked without an opening user turn) we return an empty string so
+    the reviewer can still do its best without the prefix context.
     """
     for msg in messages:
         if isinstance(msg, HumanMessage) and _VERDICT_MARKER not in str(msg.content):
@@ -99,7 +100,7 @@ def _recent_agent_messages(messages: list[Any], n: int = 6) -> list[Any]:
     return messages[-n:]
 
 
-_WRITE_TOOL_NAMES = frozenset({"write_file", "edit_file"})
+_WRITE_TOOL_NAMES = WRITE_TOOLS
 
 
 def _extract_touched_paths(messages: list[Any]) -> dict[str, int]:
