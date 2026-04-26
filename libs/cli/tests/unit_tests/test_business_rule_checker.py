@@ -37,7 +37,17 @@ def test_invariant_severities_cover_expected_set() -> None:
 
 
 def test_matcher_types_cover_expected_set() -> None:
-    assert MATCHER_TYPES == frozenset({"regex", "absent_regex", "file_exists"})
+    assert MATCHER_TYPES == frozenset(
+        {
+            "regex",
+            "absent_regex",
+            "file_exists",
+            "json_schema",
+            "python_ast",
+            "command_must_pass",
+            "file_contains_all",
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -362,6 +372,284 @@ invariants:
     status, summary, violations = run_business_rules(repo)
     assert status == "fail"
     assert any(v.invariant_id == "no_todos" for v in violations)
+
+
+# ---------------------------------------------------------------------------
+# json_schema matcher
+# ---------------------------------------------------------------------------
+
+
+def test_json_schema_passes_when_data_valid(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    (repo / "user.json").write_text('{"name": "Ada", "age": 36}')
+    inv = Invariant(
+        id="user_shape",
+        description="user objects must have name+age",
+        matcher="json_schema",
+        paths=("*.json",),
+        schema={
+            "type": "object",
+            "required": ["name", "age"],
+            "properties": {"name": {"type": "string"}, "age": {"type": "integer"}},
+        },
+    )
+    assert run_invariants((inv,), repo) == []
+
+
+def test_json_schema_fails_on_missing_required(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    (repo / "user.json").write_text('{"name": "Ada"}')
+    inv = Invariant(
+        id="user_shape",
+        description="d",
+        matcher="json_schema",
+        paths=("*.json",),
+        schema={"type": "object", "required": ["age"]},
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert "age" in violations[0].detail
+
+
+def test_json_schema_fails_on_wrong_type(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    (repo / "user.json").write_text('{"name": "Ada", "age": "thirty-six"}')
+    inv = Invariant(
+        id="user_shape",
+        description="d",
+        matcher="json_schema",
+        paths=("*.json",),
+        schema={
+            "type": "object",
+            "properties": {"age": {"type": "integer"}},
+        },
+    )
+    violations = run_invariants((inv,), repo)
+    assert any("integer" in v.detail for v in violations)
+
+
+def test_json_schema_handles_unparseable_file(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    (repo / "broken.json").write_text("{not json")
+    inv = Invariant(
+        id="any",
+        description="d",
+        matcher="json_schema",
+        paths=("*.json",),
+        schema={"type": "object"},
+    )
+    violations = run_invariants((inv,), repo)
+    assert any("could not parse as JSON" in v.detail for v in violations)
+
+
+def test_json_schema_requires_non_empty_schema(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    inv = Invariant(
+        id="bad",
+        description="d",
+        matcher="json_schema",
+        paths=("*.json",),
+        # No schema declared
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert "schema" in violations[0].detail
+
+
+# ---------------------------------------------------------------------------
+# python_ast matcher
+# ---------------------------------------------------------------------------
+
+
+def test_python_ast_finds_print_calls(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    (repo / "noisy.py").write_text("def f(x):\n    print(x)\n    return x\n")
+    (repo / "quiet.py").write_text("def g(): return 1\n")
+    inv = Invariant(
+        id="no_print",
+        description="agents shouldn't print",
+        severity="warn",
+        matcher="python_ast",
+        ast_pattern="node:Call?func.id=print",
+        paths=("*.py",),
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert violations[0].file == "noisy.py"
+    assert violations[0].line is not None
+
+
+def test_python_ast_detects_import_of_specific_module(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    (repo / "uses_os.py").write_text("import os\nx = os.environ\n")
+    (repo / "clean.py").write_text("import sys\n")
+    inv = Invariant(
+        id="no_os",
+        description="d",
+        severity="info",
+        matcher="python_ast",
+        ast_pattern="node:Import?names=os",
+        paths=("*.py",),
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert violations[0].file == "uses_os.py"
+
+
+def test_python_ast_unknown_node_type_reports(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    inv = Invariant(
+        id="bad",
+        description="d",
+        matcher="python_ast",
+        ast_pattern="node:NotARealNode",
+        paths=("*.py",),
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert "unknown ast node" in violations[0].detail
+
+
+def test_python_ast_no_pattern_reports(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    inv = Invariant(
+        id="bad",
+        description="d",
+        matcher="python_ast",
+        paths=("*.py",),
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert "ast_pattern" in violations[0].detail
+
+
+def test_python_ast_skips_unparseable_file(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    (repo / "broken.py").write_text("def f(:\n  bogus\n")
+    inv = Invariant(
+        id="any",
+        description="d",
+        matcher="python_ast",
+        ast_pattern="node:Call",
+        paths=("*.py",),
+    )
+    # Unparseable source is silently skipped — not an invariant violation.
+    assert run_invariants((inv,), repo) == []
+
+
+# ---------------------------------------------------------------------------
+# command_must_pass matcher
+# ---------------------------------------------------------------------------
+
+
+def test_command_passes_returns_no_violations(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    inv = Invariant(
+        id="true_passes",
+        description="d",
+        matcher="command_must_pass",
+        command="true",
+    )
+    assert run_invariants((inv,), repo) == []
+
+
+def test_command_failure_produces_violation(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    inv = Invariant(
+        id="false_fails",
+        description="d",
+        matcher="command_must_pass",
+        command="false",
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert "exit=1" in violations[0].detail
+
+
+def test_command_missing_executable(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    inv = Invariant(
+        id="ghost",
+        description="d",
+        matcher="command_must_pass",
+        command="this-binary-does-not-exist-xyz",
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert "executable not found" in violations[0].detail
+
+
+def test_command_unparseable_shell_quoting(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    inv = Invariant(
+        id="bad_quoting",
+        description="d",
+        matcher="command_must_pass",
+        command='echo "unterminated',
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert "shlex" in violations[0].detail.lower() or "could not parse" in violations[0].detail
+
+
+def test_command_required(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    inv = Invariant(
+        id="bad",
+        description="d",
+        matcher="command_must_pass",
+        # no command set
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert "command" in violations[0].detail
+
+
+# ---------------------------------------------------------------------------
+# file_contains_all matcher
+# ---------------------------------------------------------------------------
+
+
+def test_file_contains_all_passes(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    (repo / "config.toml").write_text("[project]\nname = 'x'\nversion = '1.0'\n")
+    inv = Invariant(
+        id="has_required_keys",
+        description="d",
+        matcher="file_contains_all",
+        substrings=("name", "version"),
+        paths=("*.toml",),
+    )
+    assert run_invariants((inv,), repo) == []
+
+
+def test_file_contains_all_flags_missing(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    (repo / "config.toml").write_text("[project]\nname = 'x'\n")
+    inv = Invariant(
+        id="has_required_keys",
+        description="d",
+        matcher="file_contains_all",
+        substrings=("name", "version", "license"),
+        paths=("*.toml",),
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert "version" in violations[0].detail
+    assert "license" in violations[0].detail
+
+
+def test_file_contains_all_requires_substrings(tmp_path: Path) -> None:
+    repo = _setup_repo(tmp_path)
+    inv = Invariant(
+        id="bad",
+        description="d",
+        matcher="file_contains_all",
+        paths=("*.toml",),
+    )
+    violations = run_invariants((inv,), repo)
+    assert len(violations) == 1
+    assert "substrings" in violations[0].detail
 
 
 def test_run_business_rules_warn_severity_does_not_fail(tmp_path: Path) -> None:

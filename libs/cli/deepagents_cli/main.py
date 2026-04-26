@@ -392,6 +392,11 @@ def parse_args() -> argparse.Namespace:
         make_help_action=_make_help_action,
     )
 
+    # Lazy-import to keep CLI startup fast for non-harness commands.
+    from deepagents_cli.harness_cli import setup_harness_parser
+
+    setup_harness_parser(subparsers, add_output_args=add_json_output_arg)
+
     threads_parser = subparsers.add_parser(
         "threads",
         help="Manage conversation threads",
@@ -1538,6 +1543,10 @@ def cli_main() -> None:
             from deepagents_cli.deploy import execute_deploy_command
 
             execute_deploy_command(args)
+        elif args.command == "harness":
+            from deepagents_cli.harness_cli import execute_harness_command
+
+            sys.exit(execute_harness_command(args))
         elif args.command == "threads":
             from deepagents_cli.sessions import (
                 delete_thread_command,

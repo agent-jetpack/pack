@@ -56,7 +56,17 @@ logger = logging.getLogger(__name__)
 
 
 SEVERITIES = frozenset({"block", "warn", "info"})
-MATCHER_TYPES = frozenset({"regex", "absent_regex", "file_exists"})
+MATCHER_TYPES = frozenset(
+    {
+        "regex",
+        "absent_regex",
+        "file_exists",
+        "json_schema",
+        "python_ast",
+        "command_must_pass",
+        "file_contains_all",
+    }
+)
 
 
 CHECKS_FILENAME = "checks.yaml"
@@ -82,6 +92,22 @@ class Invariant:
         pattern: Regex for ``regex`` / ``absent_regex`` matchers.
         target: Template for ``file_exists`` matcher. Supports
             ``{stem}`` (file stem) and ``{path}`` (full rel path).
+        schema: Inline JSON-schema dict for ``json_schema`` matcher.
+            Files matched by ``paths`` are loaded as JSON and
+            validated against this schema. Naive subset support
+            (``type``, ``required``, ``properties``); see
+            ``_check_json_schema`` for the full vocabulary.
+        ast_pattern: For ``python_ast`` matcher — a string of the
+            form ``node:NODE_NAME[?attr=value]`` (e.g. ``Call:print``,
+            ``Import:os``). Files matched by ``paths`` are parsed and
+            scanned for any AST node whose ``ast.<NODE>`` class +
+            attribute filter matches.
+        command: Shell command for ``command_must_pass`` matcher.
+            Run from the repo root; non-zero exit is a violation.
+            Timeout 60s. Treats ``stdout`` / ``stderr`` as opaque.
+        substrings: Tuple for ``file_contains_all`` matcher — every
+            entry must appear at least once in each file matched by
+            ``paths``.
     """
 
     id: str
@@ -91,6 +117,10 @@ class Invariant:
     paths: tuple[str, ...] = ()
     pattern: str = ""
     target: str = ""
+    schema: dict[str, Any] = field(default_factory=dict)
+    ast_pattern: str = ""
+    command: str = ""
+    substrings: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if self.severity not in SEVERITIES:
@@ -150,6 +180,8 @@ def load_invariants(pack_path: str | Path) -> tuple[Invariant, ...]:
         if not isinstance(entry, dict):
             continue
         try:
+            schema_value = entry.get("schema")
+            schema = schema_value if isinstance(schema_value, dict) else {}
             out.append(
                 Invariant(
                     id=str(entry["id"]),
@@ -159,6 +191,10 @@ def load_invariants(pack_path: str | Path) -> tuple[Invariant, ...]:
                     paths=_as_str_tuple(entry.get("paths")),
                     pattern=str(entry.get("pattern", "")),
                     target=str(entry.get("target", "")),
+                    schema=schema,
+                    ast_pattern=str(entry.get("ast_pattern", "")),
+                    command=str(entry.get("command", "")),
+                    substrings=_as_str_tuple(entry.get("substrings")),
                 )
             )
         except (KeyError, ValueError) as exc:
@@ -325,10 +361,334 @@ def _check_file_exists(
     return violations
 
 
+def _check_json_schema(
+    invariant: Invariant, repo_root: Path
+) -> list[InvariantViolation]:
+    """Validate every matched JSON file against ``invariant.schema``.
+
+    Implements a pragmatic subset of JSON Schema: ``type`` (string,
+    object, array, number, integer, boolean, null), ``required`` (list
+    of property names that must exist on objects), and ``properties``
+    (per-key sub-schema, recursively applied). Patterns beyond this
+    subset are silently skipped — keep the file readable rather than
+    importing a full schema library for small invariants.
+    """
+    if not invariant.schema:
+        return [
+            InvariantViolation(
+                invariant_id=invariant.id,
+                severity=invariant.severity,
+                description=invariant.description,
+                detail="json_schema matcher requires a non-empty `schema`",
+            )
+        ]
+    import json
+
+    violations: list[InvariantViolation] = []
+    for file in _iter_matching_files(repo_root, invariant.paths):
+        try:
+            data = json.loads(file.read_text(encoding="utf-8", errors="replace"))
+        except (OSError, json.JSONDecodeError) as exc:
+            violations.append(
+                InvariantViolation(
+                    invariant_id=invariant.id,
+                    severity=invariant.severity,
+                    description=invariant.description,
+                    file=str(file.relative_to(repo_root)),
+                    detail=f"could not parse as JSON: {exc}",
+                )
+            )
+            continue
+        errors = _schema_errors(data, invariant.schema, path="$")
+        for err in errors:
+            violations.append(
+                InvariantViolation(
+                    invariant_id=invariant.id,
+                    severity=invariant.severity,
+                    description=invariant.description,
+                    file=str(file.relative_to(repo_root)),
+                    detail=err,
+                )
+            )
+    return violations
+
+
+def _schema_errors(
+    value: Any, schema: dict[str, Any], *, path: str
+) -> list[str]:
+    """Recursive validator for the supported JSON-schema subset."""
+    errors: list[str] = []
+    expected_type = schema.get("type")
+    if expected_type and not _matches_json_type(value, expected_type):
+        errors.append(f"{path}: expected type {expected_type!r}, got {type(value).__name__}")
+        # Once the type is wrong further checks become misleading.
+        return errors
+    if expected_type == "object" and isinstance(value, dict):
+        for key in schema.get("required", []) or []:
+            if key not in value:
+                errors.append(f"{path}: missing required property {key!r}")
+        for prop_name, prop_schema in (schema.get("properties") or {}).items():
+            if prop_name in value and isinstance(prop_schema, dict):
+                errors.extend(
+                    _schema_errors(value[prop_name], prop_schema, path=f"{path}.{prop_name}")
+                )
+    if expected_type == "array" and isinstance(value, list):
+        items_schema = schema.get("items")
+        if isinstance(items_schema, dict):
+            for i, item in enumerate(value):
+                errors.extend(
+                    _schema_errors(item, items_schema, path=f"{path}[{i}]")
+                )
+    return errors
+
+
+_JSON_TYPES: dict[str, tuple[type, ...]] = {
+    "string": (str,),
+    "object": (dict,),
+    "array": (list,),
+    "number": (int, float),
+    "integer": (int,),
+    "boolean": (bool,),
+    "null": (type(None),),
+}
+
+
+def _matches_json_type(value: Any, expected: str) -> bool:
+    types = _JSON_TYPES.get(expected)
+    if types is None:
+        return True  # unknown type → don't pretend to validate
+    if expected == "integer" and isinstance(value, bool):
+        # bool is a subclass of int — exclude.
+        return False
+    if expected == "number" and isinstance(value, bool):
+        return False
+    return isinstance(value, types)
+
+
+def _check_python_ast(
+    invariant: Invariant, repo_root: Path
+) -> list[InvariantViolation]:
+    """Find AST nodes in matched .py files matching ``ast_pattern``.
+
+    Pattern grammar: ``node:NODE_NAME`` finds any node whose
+    ``ast.<NODE_NAME>`` class matches; ``node:NODE_NAME?attr=value``
+    additionally requires that node's ``attr`` to equal ``value``.
+    Examples::
+
+        node:Call?func.id=print     → bare ``print(...)`` calls
+        node:Import?names=os        → ``import os``
+        node:Try                    → any try/except block
+    """
+    if not invariant.ast_pattern:
+        return [
+            InvariantViolation(
+                invariant_id=invariant.id,
+                severity=invariant.severity,
+                description=invariant.description,
+                detail="python_ast matcher requires an `ast_pattern`",
+            )
+        ]
+    import ast
+
+    pattern = invariant.ast_pattern
+    if pattern.startswith("node:"):
+        pattern = pattern[len("node:") :]
+    node_name, _, attr_filter = pattern.partition("?")
+    node_class = getattr(ast, node_name.strip(), None)
+    if node_class is None or not isinstance(node_class, type) or not issubclass(node_class, ast.AST):
+        return [
+            InvariantViolation(
+                invariant_id=invariant.id,
+                severity=invariant.severity,
+                description=invariant.description,
+                detail=f"unknown ast node type {node_name!r}",
+            )
+        ]
+    attr_path: list[str] = []
+    expected_value: str | None = None
+    if attr_filter:
+        attr_path_str, _, expected_value = attr_filter.partition("=")
+        attr_path = [p.strip() for p in attr_path_str.strip().split(".") if p.strip()]
+        expected_value = expected_value.strip()
+
+    violations: list[InvariantViolation] = []
+    for file in _iter_matching_files(repo_root, invariant.paths):
+        try:
+            source = file.read_text(encoding="utf-8", errors="replace")
+            tree = ast.parse(source)
+        except (OSError, SyntaxError):
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, node_class):
+                continue
+            if attr_path and not _ast_attr_matches(node, attr_path, expected_value):
+                continue
+            violations.append(
+                InvariantViolation(
+                    invariant_id=invariant.id,
+                    severity=invariant.severity,
+                    description=invariant.description,
+                    file=str(file.relative_to(repo_root)),
+                    line=getattr(node, "lineno", None),
+                    detail=f"AST node {node_name!r} matched at line "
+                    f"{getattr(node, 'lineno', '?')}",
+                )
+            )
+    return violations
+
+
+def _ast_attr_matches(
+    node: Any, attr_path: list[str], expected: str | None
+) -> bool:
+    """Walk dotted ``attr_path`` on ``node`` and compare to ``expected``."""
+    import ast as _ast
+
+    current: Any = node
+    for attr in attr_path:
+        current = getattr(current, attr, None)
+        if current is None:
+            return False
+    if expected is None:
+        return True
+    # Special-case: ``names`` on Import is a list of alias objects;
+    # extract the names so the comparison is meaningful.
+    if isinstance(current, list) and current and isinstance(current[0], _ast.alias):
+        return any(alias.name == expected for alias in current)
+    return str(current) == expected
+
+
+def _check_command_must_pass(
+    invariant: Invariant, repo_root: Path
+) -> list[InvariantViolation]:
+    """Run a command and require zero exit.
+
+    The command is parsed with ``shlex.split`` and executed via
+    ``subprocess.run(shell=False)`` — no shell-expansion, no pipes,
+    no redirects. Invariants that need pipe semantics should call a
+    script that wraps the pipeline. This trade-off keeps the matcher
+    safe-by-default; the alternative (``shell=True``) hands every
+    invariant a code-execution surface.
+
+    Captures stdout+stderr; on failure puts the tail of stderr in the
+    violation detail so debugging doesn't need a separate run.
+    """
+    if not invariant.command:
+        return [
+            InvariantViolation(
+                invariant_id=invariant.id,
+                severity=invariant.severity,
+                description=invariant.description,
+                detail="command_must_pass matcher requires a `command`",
+            )
+        ]
+    import shlex
+    import subprocess
+
+    try:
+        argv = shlex.split(invariant.command)
+    except ValueError as exc:
+        return [
+            InvariantViolation(
+                invariant_id=invariant.id,
+                severity=invariant.severity,
+                description=invariant.description,
+                detail=f"could not parse command (shlex error): {exc}",
+            )
+        ]
+    if not argv:
+        return [
+            InvariantViolation(
+                invariant_id=invariant.id,
+                severity=invariant.severity,
+                description=invariant.description,
+                detail="command parsed to an empty argv",
+            )
+        ]
+
+    try:
+        proc = subprocess.run(  # noqa: S603  # argv parsed via shlex, shell=False
+            argv,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            check=False,
+        )
+    except FileNotFoundError:
+        return [
+            InvariantViolation(
+                invariant_id=invariant.id,
+                severity=invariant.severity,
+                description=invariant.description,
+                detail=f"command executable not found: {argv[0]!r}",
+            )
+        ]
+    except subprocess.TimeoutExpired:
+        return [
+            InvariantViolation(
+                invariant_id=invariant.id,
+                severity=invariant.severity,
+                description=invariant.description,
+                detail=f"command timed out after 60s: {invariant.command!r}",
+            )
+        ]
+    if proc.returncode == 0:
+        return []
+    tail = (proc.stderr or proc.stdout or "").strip().splitlines()[-3:]
+    detail = f"command failed (exit={proc.returncode}): {invariant.command!r}"
+    if tail:
+        detail += f" — last lines: {' | '.join(tail)}"
+    return [
+        InvariantViolation(
+            invariant_id=invariant.id,
+            severity=invariant.severity,
+            description=invariant.description,
+            detail=detail,
+        )
+    ]
+
+
+def _check_file_contains_all(
+    invariant: Invariant, repo_root: Path
+) -> list[InvariantViolation]:
+    """Each matched file must contain every substring in ``substrings``."""
+    if not invariant.substrings:
+        return [
+            InvariantViolation(
+                invariant_id=invariant.id,
+                severity=invariant.severity,
+                description=invariant.description,
+                detail="file_contains_all matcher requires `substrings`",
+            )
+        ]
+    violations: list[InvariantViolation] = []
+    for file in _iter_matching_files(repo_root, invariant.paths):
+        try:
+            text = file.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        missing = [s for s in invariant.substrings if s not in text]
+        if missing:
+            violations.append(
+                InvariantViolation(
+                    invariant_id=invariant.id,
+                    severity=invariant.severity,
+                    description=invariant.description,
+                    file=str(file.relative_to(repo_root)),
+                    detail=f"missing required substring(s): {missing}",
+                )
+            )
+    return violations
+
+
 _MATCHERS: dict[str, Any] = {
     "regex": _check_regex,
     "absent_regex": _check_absent_regex,
     "file_exists": _check_file_exists,
+    "json_schema": _check_json_schema,
+    "python_ast": _check_python_ast,
+    "command_must_pass": _check_command_must_pass,
+    "file_contains_all": _check_file_contains_all,
 }
 
 

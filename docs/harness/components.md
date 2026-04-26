@@ -104,6 +104,25 @@ Decides what kind of run is happening and what bounds apply.
   parser when PyYAML isn't importable so the module works in
   minimal environments.
 
+### `harness` CLI subcommand
+
+- **File:** `libs/cli/deepagents_cli/harness_cli.py`
+- **Tests:** `libs/cli/tests/unit_tests/test_harness_cli.py` (17 tests)
+- **Purpose:** Sharp-edge 3 from the second review. Surfaces every
+  Python harness API as a CLI command an operator can drive from
+  the shell.
+- **Commands:**
+  - `deepagents harness check [--checks ...] [--json] [REPO]`
+  - `deepagents harness discover [--no-write] [REPO]`
+  - `deepagents harness promote-lesson [--harness-dir DIR] TRIAL_DIR`
+  - `deepagents harness ratchet score [--json] [REPO]`
+  - `deepagents harness ratchet seed [REPO]`
+- **Exit codes:** check returns 1 when any check fails, 0 otherwise;
+  every other command returns 2 only on usage error.
+- **Lazy imports:** the harness commands only import their heavy
+  dependencies at dispatch time so `deepagents help` and unrelated
+  subcommands stay snappy.
+
 ### `harness check` unified pipeline
 
 - **File:** `libs/cli/deepagents_cli/harness_check.py`
@@ -133,10 +152,19 @@ Decides what kind of run is happening and what bounds apply.
   (39 tests)
 - **Purpose:** M5 of the review plan. Context packs gain a
   `checks.yaml` that declares invariants the harness enforces.
-- **Matcher types (initial):** `regex` (at least one file must
-  match), `absent_regex` (no file may match), `file_exists` (for
-  each file in `paths`, a computed companion `target` must exist —
-  supports `{stem}` / `{path}` interpolation).
+- **Matcher types:**
+  - `regex` — at least one file must match the pattern
+  - `absent_regex` — no file may match the pattern
+  - `file_exists` — companion file (template with `{stem}` /
+    `{path}` interpolation) must exist
+  - `json_schema` — validate JSON files against an inline schema
+    (subset: `type`, `required`, `properties`, `items` — recursive)
+  - `python_ast` — find AST nodes matching a `node:NODE?attr=value`
+    pattern (e.g. `node:Call?func.id=print`, `node:Import?names=os`)
+  - `command_must_pass` — run a command (parsed via `shlex.split`,
+    `shell=False` for safety) with 60s timeout; non-zero exit fails
+  - `file_contains_all` — every substring in `substrings` must
+    appear in each matched file
 - **Severity:** `block` flips the check to fail; `warn` and `info`
   surface details without blocking.
 - **First dogfood:** `.context-packs/coding-task/checks.yaml`
@@ -515,13 +543,22 @@ Total harness surface coverage: ~230 tests, all passing.
   `harness promote-lesson` automation (E.2) still pending.
 - **M1** — ✅ `.harness/config.yaml` declarative control plane.
 - **M2** — ✅ ratchet runtime persistence wired through Harbor.
-- **PR 3** — ✅ `harness check` unified pipeline.
+- **PR 3** — ✅ `harness check` unified pipeline (in-process API
+  + `deepagents harness ...` CLI subcommand).
 - **PR 5** — ✅ diff-aware reviewer (evidence-based review).
 - **M5** — ✅ executable invariants in context packs via
-  `business-rule-checker`.
+  `business-rule-checker`. Seven matcher types: regex, absent_regex,
+  file_exists, json_schema, python_ast, command_must_pass,
+  file_contains_all.
 - **M6** — ✅ `promote-lesson` automation with staged proposals.
-- **Phase F** — ⏳ autonomous cleanup agents (the only remaining
+- **Phase F** — ⏳ autonomous cleanup agents (only remaining
   roadmap phase).
+- **Cleanup-3** — ⏳ extract 8 inline middleware classes from
+  `agent.py` into `middleware/` subpackage. Mechanical refactor;
+  deferred to its own commit so the diff stays reviewable.
+- **Cleanup-5** — ⏳ triage 8 skipped sandbox tests in
+  `test_sandbox_factory.py`. Needs investigation of provider error
+  paths.
 
 See [`../roadmap/agent-harness-roadmap.md`](../roadmap/agent-harness-roadmap.md)
 for the remaining phases and design notes.
