@@ -227,3 +227,136 @@ def test_non_tool_message_passes_through() -> None:
 
     result = m.wrap_tool_call(request, handler)
     assert result is sentinel
+
+
+# ---------------------------------------------------------------------------
+# Browser tool derivations
+# ---------------------------------------------------------------------------
+
+
+def test_browser_open_success_marker() -> None:
+    m = ToolResultEnrichmentMiddleware()
+    request = _request("browser_open", {"url": "https://example.com"})
+
+    def handler(_req: Any) -> ToolMessage:
+        return _tool_message(
+            "opened https://example.com (title: 'Example Domain')",
+            name="browser_open",
+        )
+
+    result = m.wrap_tool_call(request, handler)
+    text = str(result.content)
+    assert "[browser: ok, url='https://example.com']" in text
+
+
+def test_browser_open_failure_marker() -> None:
+    m = ToolResultEnrichmentMiddleware()
+    request = _request("browser_open", {"url": "not-a-url"})
+
+    def handler(_req: Any) -> ToolMessage:
+        return _tool_message(
+            "browser_open failed: Page.goto: Invalid URL",
+            name="browser_open",
+        )
+
+    result = m.wrap_tool_call(request, handler)
+    assert "[browser: failed, url='not-a-url']" in str(result.content)
+
+
+def test_browser_open_unavailable_marker() -> None:
+    m = ToolResultEnrichmentMiddleware()
+    request = _request("browser_open", {"url": "https://x"})
+
+    def handler(_req: Any) -> ToolMessage:
+        return _tool_message(
+            "browser unavailable: obscura binary not found.",
+            name="browser_open",
+        )
+
+    result = m.wrap_tool_call(request, handler)
+    assert "[browser: failed" in str(result.content)
+
+
+def test_browser_text_renders_length_signal() -> None:
+    m = ToolResultEnrichmentMiddleware()
+    request = _request("browser_text", {})
+
+    def handler(_req: Any) -> ToolMessage:
+        return _tool_message("hello world from page" * 5, name="browser_text")
+
+    result = m.wrap_tool_call(request, handler)
+    assert "[browser:" in str(result.content)
+    assert "rendered" in str(result.content)
+
+
+def test_browser_text_unavailable_marker() -> None:
+    m = ToolResultEnrichmentMiddleware()
+    request = _request("browser_text", {})
+
+    def handler(_req: Any) -> ToolMessage:
+        return _tool_message("browser unavailable: foo", name="browser_text")
+
+    result = m.wrap_tool_call(request, handler)
+    assert "[browser: text unavailable]" in str(result.content)
+
+
+def test_browser_html_uses_text_derivation() -> None:
+    """browser_html shares the text derivation — same length signal."""
+    m = ToolResultEnrichmentMiddleware()
+    request = _request("browser_html", {})
+
+    def handler(_req: Any) -> ToolMessage:
+        return _tool_message("<html><body>hi</body></html>", name="browser_html")
+
+    result = m.wrap_tool_call(request, handler)
+    assert "[browser:" in str(result.content)
+    assert "chars rendered" in str(result.content)
+
+
+def test_browser_evaluate_success_marker() -> None:
+    m = ToolResultEnrichmentMiddleware()
+    request = _request("browser_evaluate", {"script": "1+1"})
+
+    def handler(_req: Any) -> ToolMessage:
+        return _tool_message("2", name="browser_evaluate")
+
+    result = m.wrap_tool_call(request, handler)
+    text = str(result.content)
+    assert "[browser: returned" in text
+
+
+def test_browser_evaluate_failure_marker() -> None:
+    m = ToolResultEnrichmentMiddleware()
+    request = _request("browser_evaluate", {"script": "{{"})
+
+    def handler(_req: Any) -> ToolMessage:
+        return _tool_message("browser_evaluate failed: SyntaxError", name="browser_evaluate")
+
+    result = m.wrap_tool_call(request, handler)
+    assert "[browser: evaluate failed]" in str(result.content)
+
+
+def test_browser_screenshot_success_includes_path() -> None:
+    m = ToolResultEnrichmentMiddleware()
+    request = _request("browser_screenshot", {"path": "/tmp/shot.png"})
+
+    def handler(_req: Any) -> ToolMessage:
+        return _tool_message("saved screenshot to /tmp/shot.png", name="browser_screenshot")
+
+    result = m.wrap_tool_call(request, handler)
+    assert "[browser: screenshot saved" in str(result.content)
+    assert "/tmp/shot.png" in str(result.content)
+
+
+def test_browser_screenshot_failure_marker() -> None:
+    m = ToolResultEnrichmentMiddleware()
+    request = _request("browser_screenshot", {"path": "/tmp/shot.png"})
+
+    def handler(_req: Any) -> ToolMessage:
+        return _tool_message(
+            "browser_screenshot failed: getLayoutMetrics unsupported",
+            name="browser_screenshot",
+        )
+
+    result = m.wrap_tool_call(request, handler)
+    assert "[browser: screenshot failed]" in str(result.content)

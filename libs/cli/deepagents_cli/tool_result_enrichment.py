@@ -150,6 +150,53 @@ def _derive_match_count(content: str, label: str) -> str | None:
     return f"[{label}: {len(lines)}]"
 
 
+def _derive_browser_open(content: str, args: dict[str, Any]) -> str | None:
+    """Signal for browser_open: URL + whether the tool reported failure.
+
+    The browser tools return strings like ``"opened https://x (title:
+    'Example')"`` on success and ``"browser_open failed: ..."`` on
+    error. We surface both shapes so the agent can pattern-match on
+    ``[browser: ok]`` vs ``[browser: failed]`` without re-parsing.
+    """
+    if not isinstance(content, str):
+        return None
+    url = args.get("url", "")
+    if content.startswith("opened "):
+        return f"[browser: ok, url={url!r}]"
+    if content.startswith("browser_open failed") or content.startswith("browser unavailable"):
+        return f"[browser: failed, url={url!r}]"
+    return None
+
+
+def _derive_browser_text(content: str, _args: dict[str, Any]) -> str | None:
+    """Signal for browser_text/html: rendered length so the agent
+    can decide whether the page is empty / blocked / fully loaded."""
+    if not isinstance(content, str):
+        return None
+    if content.startswith("browser unavailable") or content.startswith("browser_text failed"):
+        return "[browser: text unavailable]"
+    return f"[browser: {len(content)} chars rendered]"
+
+
+def _derive_browser_evaluate(content: str, _args: dict[str, Any]) -> str | None:
+    if not isinstance(content, str):
+        return None
+    if content.startswith(("browser_evaluate failed", "browser unavailable")):
+        return "[browser: evaluate failed]"
+    return f"[browser: returned {len(content)} chars]"
+
+
+def _derive_browser_screenshot(content: str, args: dict[str, Any]) -> str | None:
+    """Signal for screenshot tool. Reports path on success, error tag
+    otherwise — useful for the agent to know whether the file was
+    actually written before it tries to attach the image."""
+    if not isinstance(content, str):
+        return None
+    if content.startswith("saved screenshot"):
+        return f"[browser: screenshot saved, path={args.get('path', '?')!r}]"
+    return "[browser: screenshot failed]"
+
+
 # Dispatch table: tool name -> derivation callable (content, args) -> marker.
 # Each derivation returns None when it can't produce a useful signal so the
 # middleware silently skips annotation.
@@ -160,6 +207,12 @@ _DERIVATIONS: dict[str, Any] = {
     "execute": lambda content, _args: _derive_execute(content),
     "glob": lambda content, _args: _derive_match_count(content, "matches"),
     "grep": lambda content, _args: _derive_match_count(content, "matches"),
+    # Browser tool derivations — see deepagents_cli/browser/.
+    "browser_open": _derive_browser_open,
+    "browser_text": _derive_browser_text,
+    "browser_html": _derive_browser_text,
+    "browser_evaluate": _derive_browser_evaluate,
+    "browser_screenshot": _derive_browser_screenshot,
 }
 
 
