@@ -25,13 +25,13 @@ import { join, resolve } from 'node:path';
 const DEPRECATED_NAMES = [
   // v2.0 renames
   'frontend-design',    // renamed to impeccable
-  'teach-impeccable',   // folded into /impeccable teach
+  'teach-impeccable',   // folded into /design teach
   // v2.1 merges
   'arrange',            // renamed to layout
   'normalize',          // merged into polish
   'onboard',            // merged into harden
-  'extract',            // merged into /impeccable extract
-  // v3.0 consolidation: all standalone skills -> /impeccable sub-commands
+  'extract',            // merged into /design extract
+  // v3.0 consolidation: all standalone skills -> /design sub-commands
   'adapt',
   'animate',
   'audit',

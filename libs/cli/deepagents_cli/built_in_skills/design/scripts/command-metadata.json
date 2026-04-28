@@ -1,6 +1,6 @@
 {
   "craft": {
-    "description": "Full shape-then-build flow with visual iteration. Plans the UX with /impeccable shape, loads the right reference files, then builds and iterates visually until the result is delightful. Use when building a new feature end-to-end.",
+    "description": "Full shape-then-build flow with visual iteration. Plans the UX with /design shape, loads the right reference files, then builds and iterates visually until the result is delightful. Use when building a new feature end-to-end.",
     "argumentHint": "[feature description]"
   },
   "teach": {

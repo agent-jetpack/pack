@@ -398,7 +398,7 @@ Skills are domain-knowledge bundles surfaced to the agent via the
 |-------|---------|
 | `skill-creator` | Guidance for authoring new skills (Pack's own meta-skill) |
 | `remember` | Persistent-memory helpers |
-| `impeccable` | Frontend design guidance — typography, color/contrast, spatial design, motion, interaction, responsive, UX writing, anti-patterns, audits, polish flows. 35 reference files + 23 slash commands. Vendored from <https://github.com/pbakaus/impeccable> (Apache-2.0). Surfaces on UI/UX/design tasks via its broad `description` frontmatter; explicit invocation via `/audit`, `/craft`, `/polish` etc. |
+| `design` | Frontend design guidance — typography, color/contrast, spatial design, motion, interaction, responsive, UX writing, anti-patterns, audits, polish flows. 35 reference files + 23 slash commands. Vendored from <https://github.com/pbakaus/impeccable> (Apache-2.0). Renamed from upstream `impeccable` to a generic key so agents discover it via natural design vocabulary without remembering a brand name. Surfaces on UI/UX/design tasks via its broad `description` frontmatter; explicit invocation via `/design audit`, `/design craft`, `/design polish`, etc. The underlying `npx impeccable` CLI keeps its upstream name (it's the real npm package). |
 
 User and project skills override built-ins by name (precedence:
 project `.agents/skills/` > project `.deepagents/skills/` > user

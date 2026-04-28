@@ -9,18 +9,18 @@ Neo Mirai is the full craft loop in public. A retro-futurist AI design conferenc
 Repro command:
 
 ```bash
-{{command_prefix}}impeccable craft retro-futurist AI design conference website
+{{command_prefix}}design craft retro-futurist AI design conference website
 ```
 
 The important detail is the artifact chain: brand toolkit, north-star mock, semantic implementation, regenerated assets, browser iteration, responsive fixes. The mock was not treated as a screenshot to trace. It was used as direction for a real page.
 
 ## Step 1: Shape the Design
 
-Run {{command_prefix}}impeccable shape, passing along whatever feature description the user provided.
+Run {{command_prefix}}design shape, passing along whatever feature description the user provided.
 
 Wait for the design brief to be fully confirmed before proceeding. The brief is your blueprint, and every implementation decision should trace back to it.
 
-If the user has already run {{command_prefix}}impeccable shape and has a confirmed design brief, skip this step and use the existing brief.
+If the user has already run {{command_prefix}}design shape and has a confirmed design brief, skip this step and use the existing brief.
 
 ## Step 2: Load References
 
