@@ -388,6 +388,23 @@ Runs checks during and after the main agent's work.
 - **Extensibility:** `extra_derivations` kwarg lets custom tools
   register their own signal functions.
 
+## Built-in skills
+
+Skills are domain-knowledge bundles surfaced to the agent via the
+`SkillsMiddleware`. Pack ships three by default under
+`libs/cli/deepagents_cli/built_in_skills/`:
+
+| Skill | Purpose |
+|-------|---------|
+| `skill-creator` | Guidance for authoring new skills (Pack's own meta-skill) |
+| `remember` | Persistent-memory helpers |
+| `impeccable` | Frontend design guidance — typography, color/contrast, spatial design, motion, interaction, responsive, UX writing, anti-patterns, audits, polish flows. 35 reference files + 23 slash commands. Vendored from <https://github.com/pbakaus/impeccable> (Apache-2.0). Surfaces on UI/UX/design tasks via its broad `description` frontmatter; explicit invocation via `/audit`, `/craft`, `/polish` etc. |
+
+User and project skills override built-ins by name (precedence:
+project `.agents/skills/` > project `.deepagents/skills/` > user
+`~/.agents/skills/` > user `~/.deepagents/<agent>/skills/` >
+package `built_in_skills/`).
+
 ## Layer 5 — Learning
 
 Trace analyzer and reflection watcher provide the raw signal; the
