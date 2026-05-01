@@ -182,11 +182,18 @@ def _cmd_promote_lesson(args: argparse.Namespace) -> int:
             "below promotion threshold.",
         )
         return 0
-    proposal, staged = result
+    proposals, staged_paths = result
+    if not proposals:
+        print("No proposals produced (renderer returned empty).")  # noqa: T201
+        return 0
+    category = proposals[0].category
+    confidence = proposals[0].confidence
     print(  # noqa: T201
-        f"Staged {proposal.category} proposal "
-        f"(confidence={proposal.confidence}) at:\n  {staged}",
+        f"Staged {len(proposals)} {category} proposal(s) "
+        f"(confidence={confidence}). Pick one or merge:",
     )
+    for proposal, path in zip(proposals, staged_paths, strict=False):
+        print(f"  [{proposal.strategy}] {path}")  # noqa: T201
     return 0
 
 

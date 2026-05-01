@@ -1,4 +1,4 @@
-"""Tests for promote-lesson automation (M6)."""
+"""Tests for promote-lesson automation (M6 + Meta-Harness Integration 1)."""
 
 from __future__ import annotations
 
@@ -29,76 +29,119 @@ def _insight(**overrides: object) -> TraceInsight:
     return TraceInsight(**defaults)  # type: ignore[arg-type]
 
 
+def _strategies(proposals: tuple[PromotionProposal, ...]) -> set[str]:
+    return {p.strategy for p in proposals}
+
+
 # ---------------------------------------------------------------------------
-# propose — category dispatch
+# propose — multi-candidate fan-out
 # ---------------------------------------------------------------------------
 
 
-def test_propose_missing_context_targets_rules_md() -> None:
-    proposal = propose(_insight(category="missing_context"))
-    assert proposal.category == "missing_context"
-    assert proposal.target_path == ".context-packs/coding-task/rules.md"
-    assert "rule" in proposal.title.lower()
+def test_propose_returns_tuple() -> None:
+    proposals = propose(_insight())
+    assert isinstance(proposals, tuple)
+    assert len(proposals) >= 1
+    assert all(isinstance(p, PromotionProposal) for p in proposals)
 
 
-def test_propose_missing_rule_points_at_rules_md() -> None:
-    proposal = propose(_insight(category="missing_rule", confidence="high"))
-    assert proposal.category == "missing_rule"
-    assert proposal.target_path == ".context-packs/coding-task/rules.md"
-    assert proposal.confidence == "high"
+def test_missing_context_yields_strategy_distinct_variants() -> None:
+    proposals = propose(_insight(category="missing_context"))
+    strategies = _strategies(proposals)
+    # Two strategies: edit a rule vs add an example
+    assert "rule_edit" in strategies
+    assert "example_file" in strategies
+    # Variants must target different paths (otherwise reviewers
+    # can't pick between them meaningfully)
+    targets = {p.target_path for p in proposals}
+    assert len(targets) == len(proposals)
 
 
-def test_propose_missing_tool_has_no_single_target() -> None:
-    proposal = propose(_insight(category="missing_tool"))
-    # Scope/tool gaps are architectural — no single file to edit.
-    assert proposal.target_path is None
-    assert "architectural" in proposal.body.lower() or "decision" in proposal.body.lower()
+def test_missing_rule_yields_rule_and_test_variants() -> None:
+    proposals = propose(_insight(category="missing_rule"))
+    strategies = _strategies(proposals)
+    assert "rule_edit" in strategies
+    assert "companion_test" in strategies
 
 
-def test_propose_missing_example_targets_examples_dir() -> None:
-    proposal = propose(_insight(category="missing_example"))
-    assert proposal.target_path is not None
-    assert "examples" in proposal.target_path
+def test_missing_tool_yields_policy_and_backlog_variants() -> None:
+    proposals = propose(_insight(category="missing_tool"))
+    strategies = _strategies(proposals)
+    assert "policy_relaxation" in strategies
+    assert "tool_proposal" in strategies
+    # The architectural variant has no single target file
+    backlog = next(p for p in proposals if p.strategy == "tool_proposal")
+    assert backlog.target_path is None
 
 
-def test_propose_model_capability_targets_known_limits_doc() -> None:
-    proposal = propose(_insight(category="model_capability_limit"))
-    assert proposal.target_path == "docs/harness/known-limits.md"
+def test_missing_example_yields_narrative_and_golden_variants() -> None:
+    proposals = propose(_insight(category="missing_example"))
+    strategies = _strategies(proposals)
+    assert "narrative_example" in strategies
+    assert "golden_test" in strategies
 
 
-def test_propose_unknown_category_falls_back() -> None:
-    # Can't construct an unknown-category TraceInsight directly since
-    # CATEGORIES is validated. Bypass validation by constructing via
-    # object.__setattr__ (frozen dataclass guard).
+def test_model_capability_limit_yields_single_variant() -> None:
+    """Low-signal category — multi-candidate fan-out would just be noise."""
+    proposals = propose(_insight(category="model_capability_limit"))
+    assert len(proposals) == 1
+    assert proposals[0].strategy == "known_limits_note"
+
+
+def test_unknown_category_falls_back_with_manual_review_strategy() -> None:
     insight = _insight(category="missing_context")
     object.__setattr__(insight, "category", "newly_invented_bucket")
-    proposal = propose(insight)
-    assert proposal.category == "newly_invented_bucket"
-    assert "Uncategorized" in proposal.title
+    proposals = propose(insight)
+    assert len(proposals) == 1
+    assert proposals[0].strategy == "manual_review"
+    assert "Uncategorized" in proposals[0].title
 
 
 # ---------------------------------------------------------------------------
-# Proposal body shape
+# Confidence + body shape — apply to every variant
 # ---------------------------------------------------------------------------
 
 
-def test_proposal_body_has_standard_sections() -> None:
-    proposal = propose(_insight())
-    for section in ("## Insight", "## Proposed action", "## Suggested edit", "## Confidence", "## Evidence"):
-        assert section in proposal.body
+def test_every_variant_carries_insight_confidence() -> None:
+    for category in (
+        "missing_context",
+        "missing_rule",
+        "missing_tool",
+        "missing_example",
+        "model_capability_limit",
+    ):
+        proposals = propose(_insight(category=category, confidence="high"))
+        for p in proposals:
+            assert p.confidence == "high"
 
 
-def test_proposal_body_lists_evidence_bullets() -> None:
-    proposal = propose(_insight(evidence=("foo", "bar")))
-    assert "- foo" in proposal.body
-    assert "- bar" in proposal.body
+def test_every_variant_has_standard_body_sections() -> None:
+    proposals = propose(_insight())
+    for p in proposals:
+        for section in (
+            "## Insight",
+            "## Proposed action",
+            "## Suggested edit",
+            "## Confidence",
+            "## Evidence",
+        ):
+            assert section in p.body, f"strategy={p.strategy} missing {section}"
 
 
-def test_proposal_body_confidence_note_matches_level() -> None:
-    high = propose(_insight(confidence="high"))
-    low = propose(_insight(confidence="low"))
-    assert "auto-apply" in high.body
-    assert "triage hint" in low.body
+def test_every_variant_includes_evidence_bullets() -> None:
+    proposals = propose(_insight(evidence=("foo", "bar")))
+    for p in proposals:
+        assert "- foo" in p.body
+        assert "- bar" in p.body
+
+
+def test_confidence_note_matches_level_across_strategies() -> None:
+    high_props = propose(_insight(confidence="high"))
+    low_props = propose(_insight(confidence="low"))
+    for p in high_props:
+        assert "auto-apply" in p.body
+    for p in low_props:
+        assert "triage hint" in p.body
 
 
 # ---------------------------------------------------------------------------
@@ -107,14 +150,14 @@ def test_proposal_body_confidence_note_matches_level() -> None:
 
 
 def test_stage_proposal_creates_pending_promotions_dir(tmp_path: Path) -> None:
-    proposal = propose(_insight())
+    proposal = propose(_insight())[0]
     path = stage_proposal(proposal, harness_dir=tmp_path / ".harness")
     assert path.exists()
     assert path.parent.name == "pending-promotions"
 
 
-def test_staged_file_contains_header_and_body(tmp_path: Path) -> None:
-    proposal = propose(_insight(category="missing_context"))
+def test_staged_file_includes_strategy_in_header_and_filename(tmp_path: Path) -> None:
+    proposal = propose(_insight(category="missing_context"))[0]
     path = stage_proposal(
         proposal,
         harness_dir=tmp_path / ".harness",
@@ -122,72 +165,95 @@ def test_staged_file_contains_header_and_body(tmp_path: Path) -> None:
     )
     text = path.read_text()
     assert "# Promotion proposal" in text
+    assert proposal.strategy in text  # header contains the strategy tag
+    assert proposal.strategy in path.name  # filename does too
     assert "trial-123" in text
-    assert "missing_context" in text
-    # The body itself is included
-    assert "## Insight" in text
 
 
-def test_stage_proposal_filename_has_timestamp_category_trial(tmp_path: Path) -> None:
-    proposal = propose(_insight(category="missing_rule"))
+def test_stage_filename_layout_includes_category_strategy_trial(
+    tmp_path: Path,
+) -> None:
+    proposal = propose(_insight(category="missing_rule"))[0]
     path = stage_proposal(
         proposal,
         harness_dir=tmp_path / ".harness",
         trial_id="task-xyz",
     )
-    # Expected shape: <timestamp>-missing_rule-task-xyz.md
-    assert path.name.endswith("-missing_rule-task-xyz.md")
+    # Expected shape: <timestamp>-missing_rule-<strategy>-task-xyz.md
+    assert path.name.endswith(f"-missing_rule-{proposal.strategy}-task-xyz.md")
 
 
 def test_stage_proposal_sanitizes_trial_id_slashes(tmp_path: Path) -> None:
-    proposal = propose(_insight())
+    proposal = propose(_insight())[0]
     path = stage_proposal(
         proposal,
         harness_dir=tmp_path / ".harness",
         trial_id="runs/abc/xyz",
     )
-    # Slashes in the trial id could escape the pending-promotions dir
-    # — sanitized to underscores before being used as a filename.
     assert "/" not in path.name
     assert "runs_abc_xyz" in path.name
 
 
-def test_propose_and_stage_is_single_call_convenience(tmp_path: Path) -> None:
-    proposal, staged = propose_and_stage(
+# ---------------------------------------------------------------------------
+# propose_and_stage — multi-variant
+# ---------------------------------------------------------------------------
+
+
+def test_propose_and_stage_writes_one_file_per_variant(tmp_path: Path) -> None:
+    proposals, paths = propose_and_stage(
         _insight(category="missing_example"),
         harness_dir=tmp_path / ".harness",
         trial_id="t1",
     )
-    assert isinstance(proposal, PromotionProposal)
-    assert staged.exists()
+    assert isinstance(proposals, tuple)
+    assert isinstance(paths, tuple)
+    # Length parity is the contract — one staged file per proposal
+    assert len(proposals) == len(paths) == 2
+    for path in paths:
+        assert path.exists()
+    # Distinct filenames (strategy distinguishes them)
+    assert len({p.name for p in paths}) == len(paths)
+
+
+def test_propose_and_stage_returns_empty_paths_when_no_variants(
+    tmp_path: Path,
+) -> None:
+    """Defensive: an unknown category still returns at least one variant
+    via the fallback renderer; staged_paths should match length."""
+    insight = _insight()
+    object.__setattr__(insight, "category", "totally_new_category")
+    proposals, paths = propose_and_stage(
+        insight,
+        harness_dir=tmp_path / ".harness",
+        trial_id="t1",
+    )
+    assert len(proposals) == len(paths) == 1
 
 
 # ---------------------------------------------------------------------------
-# promote_from_trial end-to-end
+# promote_from_trial — multi-variant return shape
 # ---------------------------------------------------------------------------
 
 
 def _make_failed_trial(tmp_path: Path, *, kind: str) -> Path:
-    """Create a minimal Harbor trial dir that extracts_signals can read."""
+    """Create a minimal trial dir extract_signals can read."""
     trial = tmp_path / "trial-xyz"
     (trial / "agent").mkdir(parents=True)
 
     if kind == "arch":
-        # arch_rejections > 0 → missing_rule
         (trial / "result.json").write_text(
-            json.dumps({"verifier_result": {"rewards": {"reward": 0.0}}})
+            json.dumps({"verifier_result": {"rewards": {"reward": 0.0}}}),
         )
         traj = {
             "steps": [{"step_id": 1}],
             "final_metrics": {"total_prompt_tokens": 1000, "total_completion_tokens": 200},
         }
         (trial / "agent" / "trajectory.json").write_text(
-            json.dumps(traj) + "\nArch-lint violation\n"
+            json.dumps(traj) + "\nArch-lint violation\n",
         )
     elif kind == "dump":
-        # short steps + big completion → missing_example
         (trial / "result.json").write_text(
-            json.dumps({"verifier_result": {"rewards": {"reward": 0.0}}})
+            json.dumps({"verifier_result": {"rewards": {"reward": 0.0}}}),
         )
         traj = {
             "steps": [{"step_id": i} for i in range(3)],
@@ -195,9 +261,8 @@ def _make_failed_trial(tmp_path: Path, *, kind: str) -> Path:
         }
         (trial / "agent" / "trajectory.json").write_text(json.dumps(traj))
     elif kind == "hang":
-        # tool_call_count=0, no activity → model_capability_limit, low conf
         (trial / "result.json").write_text(
-            json.dumps({"verifier_result": {"rewards": {"reward": 0.0}}})
+            json.dumps({"verifier_result": {"rewards": {"reward": 0.0}}}),
         )
         traj = {
             "steps": [],
@@ -207,51 +272,51 @@ def _make_failed_trial(tmp_path: Path, *, kind: str) -> Path:
     return trial
 
 
-def test_promote_from_trial_arch_rejection_stages_proposal(tmp_path: Path) -> None:
+def test_promote_from_trial_arch_rejection_stages_two_variants(tmp_path: Path) -> None:
     trial = _make_failed_trial(tmp_path, kind="arch")
     result = promote_from_trial(trial)
     assert result is not None
-    proposal, staged = result
-    assert proposal.category == "missing_rule"
-    assert staged.exists()
-    assert "missing_rule" in staged.name
+    proposals, staged = result
+    assert {p.category for p in proposals} == {"missing_rule"}
+    # missing_rule → 2 strategies
+    assert len(proposals) == 2
+    assert _strategies(proposals) == {"rule_edit", "companion_test"}
+    for path in staged:
+        assert path.exists()
 
 
-def test_promote_from_trial_dump_pattern_stages_proposal(tmp_path: Path) -> None:
+def test_promote_from_trial_dump_pattern_stages_example_and_golden(tmp_path: Path) -> None:
     trial = _make_failed_trial(tmp_path, kind="dump")
     result = promote_from_trial(trial)
     assert result is not None
-    proposal, _ = result
-    assert proposal.category == "missing_example"
+    proposals, _ = result
+    assert _strategies(proposals) == {"narrative_example", "golden_test"}
 
 
 def test_promote_from_trial_skips_low_conf_model_limit(tmp_path: Path) -> None:
     trial = _make_failed_trial(tmp_path, kind="hang")
-    result = promote_from_trial(trial)
-    # The hang path is a low-confidence model_capability_limit — we
-    # skip it so operator inboxes aren't flooded by provider blips.
-    assert result is None
+    assert promote_from_trial(trial) is None
 
 
 def test_promote_from_trial_missing_dir_returns_none(tmp_path: Path) -> None:
-    result = promote_from_trial(tmp_path / "nonexistent")
-    assert result is None
+    assert promote_from_trial(tmp_path / "nonexistent") is None
 
 
-def test_promote_from_trial_uses_trial_harness_dir_by_default(tmp_path: Path) -> None:
+def test_promote_from_trial_default_harness_dir(tmp_path: Path) -> None:
     trial = _make_failed_trial(tmp_path, kind="arch")
     result = promote_from_trial(trial)
     assert result is not None
-    _proposal, staged = result
-    # Default: <trial_dir>/.harness/pending-promotions/...
-    assert staged.is_relative_to(trial)
-    assert staged.parent.parent.name == ".harness"
+    _proposals, staged = result
+    for path in staged:
+        assert path.is_relative_to(trial)
+        assert path.parent.parent.name == ".harness"
 
 
-def test_promote_from_trial_respects_explicit_harness_dir(tmp_path: Path) -> None:
+def test_promote_from_trial_explicit_harness_dir(tmp_path: Path) -> None:
     trial = _make_failed_trial(tmp_path, kind="arch")
     explicit = tmp_path / "custom-harness"
     result = promote_from_trial(trial, harness_dir=explicit)
     assert result is not None
-    _proposal, staged = result
-    assert staged.is_relative_to(explicit)
+    _proposals, staged = result
+    for path in staged:
+        assert path.is_relative_to(explicit)

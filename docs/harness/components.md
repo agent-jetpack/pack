@@ -411,32 +411,41 @@ Trace analyzer and reflection watcher provide the raw signal; the
 lesson-promotion automation that turns signal into durable artifacts
 is the next phase.
 
-### Promote-lesson automation
+### Promote-lesson automation (multi-candidate)
 
 - **File:** `libs/cli/deepagents_cli/promote_lesson.py`
 - **Tests:** `libs/cli/tests/unit_tests/test_promote_lesson.py`
-  (20 tests)
-- **Purpose:** M6 of the review plan. Turns a `TraceInsight` into a
-  staged artifact proposal under `.harness/pending-promotions/`.
+  (23 tests)
+- **Purpose:** M6 of the review plan + Meta-Harness Integration 1.
+  Turns a `TraceInsight` into **multiple strategy-distinct**
+  artifact proposals staged under `.harness/pending-promotions/`.
 - **Inputs:** a trial directory (or a bare `TraceInsight`) plus
   optional explicit `harness_dir`.
-- **Outputs:** `PromotionProposal(category, confidence, title,
-  target_path, body, evidence, rationale)` plus a staged markdown
-  file at `.harness/pending-promotions/<timestamp>-<category>-<trial>.md`.
-- **Category → target:**
-  - `missing_context` → append to `coding-task/rules.md`
-  - `missing_rule` → rule entry in `coding-task/rules.md` (rule
-    already enforced; context just needed to echo it)
-  - `missing_tool` → no single target — architectural decision
-  - `missing_example` → new file in `coding-task/examples/`
-  - `model_capability_limit` → append to `docs/harness/known-limits.md`
-- **Never auto-commits:** proposals stage to
-  `.harness/pending-promotions/` for human review. Governance stays
-  with the operator.
-- **CLI entry:** `promote_from_trial(trial_dir)` reads a Harbor
-  trial, runs the analyzer, and stages unless the insight is a
-  low-confidence `model_capability_limit` (skips to avoid operator
-  inbox spam on provider blips).
+- **Outputs:** parallel tuples — `tuple[PromotionProposal, ...]`
+  and `tuple[Path, ...]`. One staged markdown file per variant at
+  `.harness/pending-promotions/<timestamp>-<category>-<strategy>-<trial>.md`.
+- **Category → strategies:** each renderer emits 1–2 qualitatively
+  different proposal shapes so reviewers pick between *kinds of
+  artifact* rather than intensity gradients of the same artifact:
+
+  | Category | Variants |
+  |---|---|
+  | `missing_context` | `rule_edit` (rules.md bullet), `example_file` (examples/ markdown) |
+  | `missing_rule` | `rule_edit` (echo encoded rule), `companion_test` (regression test) |
+  | `missing_tool` | `policy_relaxation` (widen allowed_paths), `tool_proposal` (backlog issue) |
+  | `missing_example` | `narrative_example` (examples/decomposition.md), `golden_test` (tests/golden fixture) |
+  | `model_capability_limit` | `known_limits_note` (single variant — multi-shot would be noise) |
+
+- **Never auto-commits:** all variants stage to
+  `.harness/pending-promotions/` for human review. The reviewer
+  picks one (or none, or merges several). Governance stays with
+  the operator — this is the Pareto-frontier-at-human-judgment
+  pattern from the Meta-Harness review.
+- **CLI:** `deepagents harness promote-lesson <trial-dir>` reads
+  the trial, runs the analyzer, and stages every variant. Output
+  lists each with its `[strategy]` tag for quick scanning.
+- **Skip rule:** low-confidence `model_capability_limit` insights
+  don't stage at all (provider-blip noise filter).
 
 ### Trace analyzer
 

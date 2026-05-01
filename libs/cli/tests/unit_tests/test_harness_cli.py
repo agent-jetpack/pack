@@ -202,8 +202,12 @@ def test_promote_lesson_stages_proposal(tmp_path: Path, capsys: pytest.CaptureFi
     code = execute_harness_command(args)
     assert code == 0
     out = capsys.readouterr().out
+    # Multi-candidate output: "Staged 2 missing_rule proposal(s) ..."
+    # plus one bullet per staged variant.
     assert "Staged" in out
     assert "missing_rule" in out
+    assert "[rule_edit]" in out
+    assert "[companion_test]" in out
 
 
 def test_ratchet_score_no_state(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
